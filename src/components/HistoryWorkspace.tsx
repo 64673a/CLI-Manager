@@ -10,6 +10,7 @@ import { useWorktreeStore } from "../stores/worktreeStore";
 import { useExternalSessionSyncStore } from "../stores/externalSessionSyncStore";
 import { useI18n } from "../lib/i18n";
 import { getHistoryPathArgs } from "../lib/historyPathArgs";
+import { inferSubagentParentSessionId } from "../lib/historySubagents";
 import {
   HISTORY_SOURCE_DESCRIPTOR_BY_ID,
   type HistorySourceId,
@@ -1104,10 +1105,16 @@ export function HistoryWorkspace({ active = true }: HistoryWorkspaceProps) {
 
   const handleRequestBulkDelete = useCallback(() => {
     if (selectedSessionKeys.size === 0) return;
-    const sessionKeys = filteredSessions.filter((item) => selectedSessionKeys.has(item.sessionKey)).map((item) => item.sessionKey);
-    if (sessionKeys.length === 0) return;
+    const selectedItems = filteredSessions.filter((item) => selectedSessionKeys.has(item.sessionKey));
+    if (selectedItems.length === 0) return;
+    // subagent 子会话由后端随父会话连带删除，禁止单独删除，不进入批量删除队列。
+    const sessionKeys = selectedItems.filter((item) => inferSubagentParentSessionId(item) === null).map((item) => item.sessionKey);
+    if (sessionKeys.length === 0) {
+      toast.info(t("history.toast.bulkDeleteSubagentOnly"));
+      return;
+    }
     setDeleteIntent({ type: "bulk", sessionKeys });
-  }, [filteredSessions, selectedSessionKeys]);
+  }, [filteredSessions, selectedSessionKeys, t]);
 
   const deleteDialogTitle = deleteIntent?.type === "bulk" ? t("history.bulk.confirmDeleteTitle", { count: deleteIntent.sessionKeys.length }) : t("history.deleteSession");
   const deleteDialogMessage = deleteIntent

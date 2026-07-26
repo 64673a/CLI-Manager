@@ -6,6 +6,7 @@ import { createPerfMarker, logInfo, logWarn } from "../lib/logger";
 import { normalizeHistoryProjectPaths, resolveHistoryProjectPath } from "../lib/historyProjectPaths";
 import { buildSshAgentHistoryContext, type SshAgentHistoryContext } from "../lib/sshAgentHistory";
 import { ensureHistorySourceSettingsLoaded, getHistoryPathArgs, getHistoryPathArgsSync } from "../lib/historyPathArgs";
+import { inferSubagentParentSessionId } from "../lib/historySubagents";
 import { useProjectStore } from "./projectStore";
 import { useSshAgentIntegrationStore } from "./sshAgentIntegrationStore";
 import { useBackgroundOperationStore } from "./backgroundOperationStore";
@@ -2444,6 +2445,8 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
       throw new Error("history_remote_read_only");
     }
 
+    // 后端删除会话时会连带删除其 subagents/ 子转录，本地状态需同步移除对应子行。
+    const removedSessionKeys = new Set([sessionKey]);
     if (!target.favoriteSnapshot) {
       await invoke("history_delete_session", {
         filePath: target.file_path,
@@ -2451,23 +2454,35 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
         source: target.source,
         projectKey: target.project_key,
       });
+      for (const item of get().sessions) {
+        if (
+          item.source === target.source &&
+          item.project_key === target.project_key &&
+          inferSubagentParentSessionId(item) === target.session_id
+        ) {
+          removedSessionKeys.add(item.sessionKey);
+        }
+      }
     }
 
     const db = await getDb();
-    await db.execute("DELETE FROM session_meta WHERE session_key = $1", [sessionKey]);
-    await deleteFavoriteSnapshot(sessionKey);
+    for (const key of removedSessionKeys) {
+      await db.execute("DELETE FROM session_meta WHERE session_key = $1", [key]);
+      await deleteFavoriteSnapshot(key);
+    }
 
-    const sessions = get().sessions.filter((item) => item.sessionKey !== sessionKey);
+    const sessions = get().sessions.filter((item) => !removedSessionKeys.has(item.sessionKey));
     const metaMap = { ...get().metaMap };
-    delete metaMap[sessionKey];
-    const activeWasDeleted = get().activeSessionKey === sessionKey;
-    const nextActiveKey = activeWasDeleted ? sessions[0]?.sessionKey ?? null : get().activeSessionKey;
+    for (const key of removedSessionKeys) delete metaMap[key];
+    const currentActiveKey = get().activeSessionKey;
+    const activeWasDeleted = currentActiveKey !== null && removedSessionKeys.has(currentActiveKey);
+    const nextActiveKey = activeWasDeleted ? sessions[0]?.sessionKey ?? null : currentActiveKey;
     set({
       sessions,
       metaMap,
       activeSessionKey: nextActiveKey,
       activeSession: activeWasDeleted ? null : get().activeSession,
-      searchHits: get().searchHits.filter((hit) => hitSessionKey(hit) !== sessionKey),
+      searchHits: get().searchHits.filter((hit) => !removedSessionKeys.has(hitSessionKey(hit))),
       focusedMessageIndex: null,
     });
     if (nextActiveKey && activeWasDeleted) {
