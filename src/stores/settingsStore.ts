@@ -66,8 +66,10 @@ export type TerminalThemeMode = "system" | "independent";
 export type SidebarDensity = "compact" | "comfortable";
 export type ViewMode = "standard" | "compact";
 export type CloseBehavior = "ask" | "minimize" | "exit";
-/** 退出时存在运行中任务的处理方式：询问 / 后台继续 / 丢弃任务并退出。 */
+/** 退出时存在运行中任务的处理方式：询问 / 后台继续 / 最小化到托盘 / 丢弃任务并退出。 */
 export type ExitWithRunningTasksBehavior = "ask" | "background" | "minimize" | "discard";
+/** 启动检测到可恢复终端标签时的恢复方式：启动时弹窗询问 / 静默自动恢复。 */
+export type TerminalSessionRestoreMode = "ask" | "auto";
 export const LINUX_GRAPHICS_MODES = ["auto", "system", "disable-dmabuf", "disable-compositing"] as const;
 export type LinuxGraphicsMode = (typeof LINUX_GRAPHICS_MODES)[number];
 type LastSettingsTab =
@@ -371,6 +373,8 @@ export interface Settings {
   ccusageUseWsl: boolean;
   windowsConptyCompatibilityFixEnabled: boolean;
   terminalSessionRestoreEnabled: boolean;
+  /** 恢复方式：启动时弹窗询问（默认）或静默自动恢复。仅在 terminalSessionRestoreEnabled 为真时生效。 */
+  terminalSessionRestoreMode: TerminalSessionRestoreMode;
   projectWorktreeConfigEnabled: boolean;
   symlinkCompatibilityEnabled: boolean;
   lowMemoryMode: boolean;
@@ -527,6 +531,7 @@ const DEFAULTS: Settings = {
   ccusageUseWsl: false,
   windowsConptyCompatibilityFixEnabled: false,
   terminalSessionRestoreEnabled: true,
+  terminalSessionRestoreMode: "ask",
   projectWorktreeConfigEnabled: true,
   symlinkCompatibilityEnabled: false,
   lowMemoryMode: false,
@@ -1287,6 +1292,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       typeof entries.terminalSessionRestoreEnabled === "boolean"
         ? entries.terminalSessionRestoreEnabled
         : DEFAULTS.terminalSessionRestoreEnabled;
+    entries.terminalSessionRestoreMode =
+      entries.terminalSessionRestoreMode === "ask" ||
+      entries.terminalSessionRestoreMode === "auto"
+        ? entries.terminalSessionRestoreMode
+        : DEFAULTS.terminalSessionRestoreMode;
     entries.projectWorktreeConfigEnabled =
       typeof entries.projectWorktreeConfigEnabled === "boolean"
         ? entries.projectWorktreeConfigEnabled

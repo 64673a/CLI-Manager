@@ -48,6 +48,7 @@ import {
   type BatchLaunchPaneDirection,
   type CloseBehavior,
   type ExitWithRunningTasksBehavior,
+  type TerminalSessionRestoreMode,
   type TerminalSettingsSectionKey,
   type UnsplitBehavior,
 } from "../../../stores/settingsStore";
@@ -199,6 +200,8 @@ export function ThemeSettingsPage() {
   const unsplitBehavior = useSettingsStore((s) => s.unsplitBehavior);
   const closeBehavior = useSettingsStore((s) => s.closeBehavior);
   const exitWithRunningTasksBehavior = useSettingsStore((s) => s.exitWithRunningTasksBehavior);
+  const terminalSessionRestoreEnabled = useSettingsStore((s) => s.terminalSessionRestoreEnabled);
+  const terminalSessionRestoreMode = useSettingsStore((s) => s.terminalSessionRestoreMode);
   const backgroundIncludeFinishedTasks = useSettingsStore((s) => s.backgroundIncludeFinishedTasks);
   const confirmBeforeClosingTerminalTab = useSettingsStore((s) => s.confirmBeforeClosingTerminalTab);
   const terminalTabHoverInfoEnabled = useSettingsStore((s) => s.terminalTabHoverInfoEnabled);
@@ -390,7 +393,12 @@ export function ThemeSettingsPage() {
   const exitWithRunningTasksOptions: { value: ExitWithRunningTasksBehavior; label: string }[] = [
     { value: "ask", label: t("settings.options.exitTasks.ask") },
     { value: "background", label: t("settings.options.exitTasks.background") },
+    { value: "minimize", label: t("settings.options.exitTasks.minimize") },
     { value: "discard", label: t("settings.options.exitTasks.discard") },
+  ];
+  const terminalSessionRestoreModeOptions: { value: TerminalSessionRestoreMode; label: string }[] = [
+    { value: "ask", label: t("settings.options.sessionRestore.ask") },
+    { value: "auto", label: t("settings.options.sessionRestore.auto") },
   ];
   const normalizedDefaultShell = normalizeShellKey(defaultShell);
   const shellSelectValue = normalizedDefaultShell ?? defaultShell;
@@ -831,6 +839,24 @@ export function ThemeSettingsPage() {
               size="xs"
               aria-label={t("settings.general.exitWithRunningTasks")}
               description={t("settings.general.exitWithRunningTasksDescription")}
+            />
+
+            <Select<TerminalSessionRestoreMode>
+              label={t("settings.general.terminalSessionRestoreMode")}
+              value={terminalSessionRestoreMode}
+              onChange={(value) => {
+                if (value) void update("terminalSessionRestoreMode", value);
+              }}
+              data={terminalSessionRestoreModeOptions}
+              allowDeselect={false}
+              disabled={!terminalSessionRestoreEnabled}
+              size="xs"
+              aria-label={t("settings.general.terminalSessionRestoreMode")}
+              description={
+                terminalSessionRestoreEnabled
+                  ? t("settings.general.terminalSessionRestoreModeDescription")
+                  : t("settings.general.terminalSessionRestoreModeDisabledHint")
+              }
             />
 
             <Card className="border border-border bg-surface-container-lowest" p="sm" radius="lg">

@@ -51,6 +51,7 @@ export const SETTING_BACKUP_POLICY = {
   ccusageUseWsl: "excluded",
   windowsConptyCompatibilityFixEnabled: "excluded",
   terminalSessionRestoreEnabled: "excluded",
+  terminalSessionRestoreMode: "excluded",
   projectWorktreeConfigEnabled: "preferences",
   symlinkCompatibilityEnabled: "excluded",
   lowMemoryMode: "excluded",
