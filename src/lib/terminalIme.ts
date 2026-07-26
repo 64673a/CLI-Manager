@@ -199,11 +199,13 @@ export const attachTerminalIme = ({
     const left = String(Math.max(0, anchor.x * cell.width)) + "px";
     const top = String(Math.max(0, anchor.y * cell.height)) + "px";
     const height = String(Math.max(1, cell.height)) + "px";
+    const maxWidth = String(Math.max(1, terminal.cols - anchor.x) * cell.width) + "px";
     if (compositionView) {
       compositionView.style.left = left;
       compositionView.style.top = top;
       compositionView.style.height = height;
       compositionView.style.lineHeight = height;
+      compositionView.style.maxWidth = maxWidth;
     }
     if (textarea) {
       const compositionBounds = compositionView?.getBoundingClientRect();
