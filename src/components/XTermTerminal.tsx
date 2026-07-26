@@ -46,6 +46,7 @@ import { useTerminalOsc } from "../hooks/useTerminalOsc";
 import { useTerminalDisplay } from "../hooks/useTerminalDisplay";
 import { useTerminalInput, type TerminalSuggestionGhostState } from "../hooks/useTerminalInput";
 import { getTerminalCellWidth } from "../lib/terminalCellWidth";
+import { copyTextToClipboard } from "../lib/systemClipboard";
 import { normalizeTerminalTuiComposerBackground } from "../lib/terminalTuiDisplay";
 import { hexToRgba, normalizeHexColor } from "../lib/terminalColor";
 import { wrapTerminalPasteTextForCtrlShiftV } from "../lib/terminalKeyboard";
@@ -221,26 +222,6 @@ const createTerminalLinkHoverIcon = (
       element.remove();
     },
   };
-};
-
-const copyTextToClipboard = async (text: string) => {
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "true");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      document.execCommand("copy");
-    } finally {
-      document.body.removeChild(textarea);
-    }
-  }
 };
 
 const lineHasVisibleTextAfterColumn = (line: IBufferLine, column: number, cols: number) => {
@@ -1013,6 +994,9 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       scrollback: effectiveTerminalScrollbackRows,
       scrollOnEraseInDisplay: true,
       allowProposedApi: true,
+      // Keep text selection available when a shell or TUI enables mouse reporting.
+      // Hold Alt to send mouse clicks and drags to the underlying application.
+      mouseEventsRequireAlt: true,
       minimumContrastRatio: getTerminalMinimumContrastRatio(baseTheme, isTransparentRef.current),
       // xterm cannot toggle transparency after construction, so keep it enabled
       // even though WebGL is disabled while a background image is active.
