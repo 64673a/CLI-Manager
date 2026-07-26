@@ -15,7 +15,6 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke } from "@tauri-apps/api/core";
-import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useShallow } from "zustand/shallow";
 import {
@@ -558,6 +557,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     acceptSuggestion,
     attachPasteAndDrop,
     pasteText,
+    readClipboardPasteText,
     attachSelection,
     attachIme,
   } = useTerminalInput({
@@ -1416,7 +1416,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       }
       if (e.type === "keydown" && e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === "v") {
         e.preventDefault();
-        readClipboardText().then((text) => {
+        readClipboardPasteText().then((text) => {
           pasteText(terminal, wrapTerminalPasteTextForCtrlShiftV(text));
         }).catch((err) => {
           logError("Failed to read clipboard text", { sessionId, err });
@@ -1461,7 +1461,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       }
       if (key === "v") {
         e.preventDefault();
-        readClipboardText().then((text) => {
+        readClipboardPasteText().then((text) => {
           pasteText(terminal, text);
         }).catch((err) => {
           logError("Failed to read clipboard text", { sessionId, err });
@@ -1671,8 +1671,8 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     const terminal = terminalRef.current;
     closeContextMenu();
     if (!terminal) return;
-    readClipboardText().then((text) => {
-      pasteText(terminal, text);
+    readClipboardPasteText().then((text) => {
+      if (text) pasteText(terminal, text);
       terminal.focus();
     }).catch((err) => {
       logError("Failed to read clipboard text", { sessionId, err });

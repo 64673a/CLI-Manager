@@ -6,6 +6,7 @@ import {
 } from "react";
 import type { IBufferLine, Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
+import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
@@ -154,6 +155,7 @@ export interface UseTerminalInputResult {
   onCommandSubmitted: (command: string) => void;
   attachPasteAndDrop: (terminal: Terminal) => () => void;
   pasteText: (terminal: Terminal, text: string) => void;
+  readClipboardPasteText: () => Promise<string>;
   attachSelection: (
     terminal: Terminal,
     options: TerminalInputSelectionOptions,
@@ -1113,14 +1115,6 @@ export function useTerminalInput({
       paste: pasteIntoTerminal,
       focus: () => terminal.focus(),
     });
-    const getShellForPathQuoting = async () => {
-      const os = await getOsPlatformForPathQuoting();
-      const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
-      const sessionShell = normalizeShellForKnownOs(session?.shell, os);
-      if (sessionShell) return sessionShell;
-      const defaultShell = normalizeShellForKnownOs(useSettingsStore.getState().defaultShell, os);
-      return defaultShell ?? defaultShellForOs(os);
-    };
     const getCurrentDropContext = () => {
       const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
       const project = session?.projectId
@@ -1167,7 +1161,33 @@ export function useTerminalInput({
         return;
       }
 
-      const text = event.clipboardData?.getData("text/plain");
+      const clipboardData = event.clipboardData;
+      const text = clipboardData?.getData("text/plain");
+
+      // 资源管理器复制文件放入的是 CF_HDROP，WebView 拿不到路径文本。检测到文件提示时
+      // 走原生命令读绝对路径，成功则优先粘路径（读不到再回退文本）。
+      const hasFileHint = (clipboardData?.files?.length ?? 0) > 0
+        || hasDataTransferType(clipboardData ?? null, "Files");
+      if (hasFileHint) {
+        event.preventDefault();
+        event.stopPropagation();
+        void invoke<string[]>("clipboard_read_file_paths")
+          .then(async (paths) => {
+            const filePaths = paths.filter(Boolean);
+            if (filePaths.length > 0) {
+              pasteIntoTerminal(formatShellPathList(filePaths, await getShellForPathQuoting()));
+              terminal.focus();
+              return;
+            }
+            if (text) pasteIntoTerminal(text);
+          })
+          .catch((err) => {
+            logError("Failed to read clipboard file paths", { sessionId, err });
+            if (text) pasteIntoTerminal(text);
+          });
+        return;
+      }
+
       if (text === undefined) return;
       event.preventDefault();
       event.stopPropagation();
@@ -1240,6 +1260,35 @@ export function useTerminalInput({
     terminal.paste(normalizedText);
   };
 
+  const getShellForPathQuoting = async () => {
+    const os = await getOsPlatformForPathQuoting();
+    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
+    const sessionShell = normalizeShellForKnownOs(session?.shell, os);
+    if (sessionShell) return sessionShell;
+    const defaultShell = normalizeShellForKnownOs(useSettingsStore.getState().defaultShell, os);
+    return defaultShell ?? defaultShellForOs(os);
+  };
+
+  // Ctrl+V / 右键粘贴：tauri clipboard readText 拿不到资源管理器复制的文件，且剪贴板仅有
+  // 文件时 readText 会直接抛错。故先读原生 CF_HDROP 文件路径，有文件就优先返回按 shell 引用
+  // 的路径列表；否则再读文本（读文本失败静默回退空串，不阻断文件粘贴路径）。
+  const readClipboardPasteText = async (): Promise<string> => {
+    let filePaths: string[] = [];
+    try {
+      filePaths = (await invoke<string[]>("clipboard_read_file_paths")).filter(Boolean);
+    } catch (err) {
+      logError("Failed to read clipboard file paths", { sessionId, err });
+    }
+    if (filePaths.length > 0) {
+      return formatShellPathList(filePaths, await getShellForPathQuoting());
+    }
+    try {
+      return await readClipboardText();
+    } catch {
+      return "";
+    }
+  };
+
   return {
     isComposingRef,
     attachInputForwarding,
@@ -1255,6 +1304,7 @@ export function useTerminalInput({
     },
     attachPasteAndDrop,
     pasteText,
+    readClipboardPasteText,
     attachSelection,
   };
 }

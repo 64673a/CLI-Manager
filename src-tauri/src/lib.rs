@@ -968,6 +968,7 @@ pub fn run() {
             commands::ssh_config::ssh_config_import_preview,
             commands::third_party_notification::third_party_notification_test_send,
             commands::logging::set_debug_logging,
+            commands::fs::clipboard_read_file_paths,
             commands::fs::check_paths_exist,
             commands::fs::file_get_path_kind,
             commands::fs::file_watch_start,
