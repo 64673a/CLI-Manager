@@ -6,7 +6,10 @@ import {
 } from "react";
 import type { IBufferLine, Terminal } from "@xterm/xterm";
 import { invoke } from "@tauri-apps/api/core";
-import { readText as readClipboardText } from "@tauri-apps/plugin-clipboard-manager";
+import {
+  readImage as readClipboardImage,
+  readText as readClipboardText,
+} from "@tauri-apps/plugin-clipboard-manager";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
@@ -14,6 +17,7 @@ import { TERMINAL_FILE_PATH_MIME } from "../lib/aiPathFormatter";
 import {
   arrayBufferToBase64,
   createClipboardImageFileName,
+  createClipboardPngFile,
   getClipboardImageFile,
   hasDataTransferType,
 } from "../lib/terminalClipboardImage";
@@ -1096,6 +1100,39 @@ export function useTerminalInput({
     };
   };
 
+  const getCurrentPasteContext = () => {
+    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
+    const project = session?.projectId
+      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
+      : null;
+    return { session, project };
+  };
+
+  const savePastedImageForTerminal = async (
+    file: File,
+    context: ReturnType<typeof getCurrentPasteContext>,
+  ): Promise<string | null> => {
+    const { session, project } = context;
+    const attachRootPath = project?.path || session?.cwd || null;
+    if (!attachRootPath) return null;
+
+    try {
+      const fileName = createClipboardImageFileName(file);
+      const dataBase64 = arrayBufferToBase64(await file.arrayBuffer());
+      const attachedRelativePath = await invoke<string>("file_attach_data", {
+        rootPath: attachRootPath,
+        fileName,
+        dataBase64,
+      });
+      cleanupExpiredAttachmentsOnce(attachRootPath);
+      return joinLocalPath(attachRootPath, attachedRelativePath);
+    } catch (err) {
+      logError("Failed to attach pasted terminal image", { sessionId, err });
+      toast.error("截图粘贴失败", { description: String(err) });
+      return null;
+    }
+  };
+
   const attachPasteAndDrop = (terminal: Terminal) => {
     const pasteTarget = containerRef.current;
     if (!pasteTarget) return () => {};
@@ -1115,41 +1152,9 @@ export function useTerminalInput({
       paste: pasteIntoTerminal,
       focus: () => terminal.focus(),
     });
-    const getCurrentDropContext = () => {
-      const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
-      const project = session?.projectId
-        ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
-        : null;
-      return { session, project };
-    };
-    const savePastedImageForTerminal = async (
-      file: File,
-      context: ReturnType<typeof getCurrentDropContext>,
-    ): Promise<string | null> => {
-      const { session, project } = context;
-      const attachRootPath = project?.path || session?.cwd || null;
-      if (!attachRootPath) return null;
-
-      try {
-        const fileName = createClipboardImageFileName(file);
-        const dataBase64 = arrayBufferToBase64(await file.arrayBuffer());
-        const attachedRelativePath = await invoke<string>("file_attach_data", {
-          rootPath: attachRootPath,
-          fileName,
-          dataBase64,
-        });
-        cleanupExpiredAttachmentsOnce(attachRootPath);
-        return joinLocalPath(attachRootPath, attachedRelativePath);
-      } catch (err) {
-        logError("Failed to attach pasted terminal image", { sessionId, err });
-        toast.error("截图粘贴失败", { description: String(err) });
-        return null;
-      }
-    };
-
     const onPaste = (event: ClipboardEvent) => {
       const imageFile = getClipboardImageFile(event.clipboardData);
-      const context = getCurrentDropContext();
+      const context = getCurrentPasteContext();
       if (imageFile) {
         event.preventDefault();
         event.stopPropagation();
@@ -1269,9 +1274,28 @@ export function useTerminalInput({
     return defaultShell ?? defaultShellForOs(os);
   };
 
-  // Ctrl+V / 右键粘贴：tauri clipboard readText 拿不到资源管理器复制的文件，且剪贴板仅有
-  // 文件时 readText 会直接抛错。故先读原生 CF_HDROP 文件路径，有文件就优先返回按 shell 引用
-  // 的路径列表；否则再读文本（读文本失败静默回退空串，不阻断文件粘贴路径）。
+  const readClipboardImageFile = async (): Promise<File | null> => {
+    let image: Awaited<ReturnType<typeof readClipboardImage>>;
+    try {
+      image = await readClipboardImage();
+    } catch {
+      return null;
+    }
+
+    try {
+      const { width, height } = await image.size();
+      return await createClipboardPngFile(await image.rgba(), width, height);
+    } catch (err) {
+      logError("Failed to convert clipboard image", { sessionId, err });
+      toast.error("截图粘贴失败", { description: String(err) });
+      return null;
+    } finally {
+      await image.close().catch(() => {});
+    }
+  };
+
+  // Ctrl+V / 右键粘贴统一按“文件路径 → 截图位图 → 文本”读取。资源管理器文件使用
+  // 原生 CF_HDROP；截图通过 clipboard-manager 读取 RGBA 后转成 PNG，并复用现有附件保存链路。
   const readClipboardPasteText = async (): Promise<string> => {
     let filePaths: string[] = [];
     try {
@@ -1282,6 +1306,13 @@ export function useTerminalInput({
     if (filePaths.length > 0) {
       return formatShellPathList(filePaths, await getShellForPathQuoting());
     }
+
+    const imageFile = await readClipboardImageFile();
+    if (imageFile) {
+      const path = await savePastedImageForTerminal(imageFile, getCurrentPasteContext());
+      return path ? formatShellPathList([path], await getShellForPathQuoting()) : "";
+    }
+
     try {
       return await readClipboardText();
     } catch {
