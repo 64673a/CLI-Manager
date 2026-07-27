@@ -17,6 +17,7 @@ export function selectUniqueSshCodexSessionBinding(input: {
   terminalActivityAtMs: number;
   nowMs: number;
   alreadyBoundSessionIds: ReadonlySet<string>;
+  requestedSessionId?: string | null;
 }): SshCodexSessionBindingSelection {
   const earliestCreatedAt = input.terminalStartedAtMs - SSH_SESSION_CLOCK_SKEW_MS;
   const earliestUpdatedAt = Math.max(
@@ -24,6 +25,10 @@ export function selectUniqueSshCodexSessionBinding(input: {
     input.terminalActivityAtMs || input.terminalStartedAtMs,
   ) - SSH_SESSION_CLOCK_SKEW_MS;
   const latestPlausibleAt = input.nowMs + SSH_SESSION_CLOCK_SKEW_MS;
+  const requestedSessionId = input.requestedSessionId?.trim() || "";
+  if (requestedSessionId && /[\s\0\r\n]/.test(requestedSessionId)) {
+    return { status: "not_found" };
+  }
   const matches = input.summaries.filter((summary) => {
     const sessionId = normalizedSessionId(summary);
     return summary.source === "codex"
@@ -32,10 +37,12 @@ export function selectUniqueSshCodexSessionBinding(input: {
       && !/\s/.test(sessionId)
       && !input.alreadyBoundSessionIds.has(sessionId)
       && summary.message_count > 0
-      && summary.created_at >= earliestCreatedAt
-      && summary.created_at <= latestPlausibleAt
-      && summary.updated_at >= earliestUpdatedAt
-      && summary.updated_at <= latestPlausibleAt;
+      && (requestedSessionId
+        ? sessionId === requestedSessionId
+        : summary.created_at >= earliestCreatedAt
+          && summary.created_at <= latestPlausibleAt
+          && summary.updated_at >= earliestUpdatedAt
+          && summary.updated_at <= latestPlausibleAt);
   });
 
   if (matches.length === 0) return { status: "not_found" };

@@ -45,13 +45,14 @@ function summary(overrides = {}) {
   };
 }
 
-function select(summaries, alreadyBoundSessionIds = new Set()) {
+function select(summaries, alreadyBoundSessionIds = new Set(), requestedSessionId = null) {
   return binding.selectUniqueSshCodexSessionBinding({
     summaries,
     terminalStartedAtMs,
     terminalActivityAtMs: nowMs - 5_000,
     nowMs,
     alreadyBoundSessionIds,
+    requestedSessionId,
   });
 }
 
@@ -72,6 +73,24 @@ test("old, empty, local, and already-bound sessions are rejected", () => {
     session_ref: { ...summary().session_ref, transportKind: "local" },
   })]), { status: "not_found" });
   assert.deepEqual(select([summary()], new Set(["thread-1"])), { status: "not_found" });
+});
+
+test("an explicit resume target bypasses creation-time inference", () => {
+  const resumed = summary({
+    created_at: terminalStartedAtMs - 12 * 60 * 60 * 1_000,
+    updated_at: terminalStartedAtMs - 5 * 60 * 1_000,
+  });
+  assert.deepEqual(select([resumed], new Set(), "thread-1"), {
+    status: "resolved",
+    sessionId: "thread-1",
+    sourceInstanceId: "remote-source-1",
+  });
+});
+
+test("an explicit resume target fails closed instead of binding another recent session", () => {
+  assert.deepEqual(select([summary()], new Set(), "thread-missing"), {
+    status: "not_found",
+  });
 });
 
 test("multiple plausible remote sessions fail closed", () => {
