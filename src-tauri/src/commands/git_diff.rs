@@ -9,6 +9,9 @@ use super::git_diff_display::{
 };
 use crate::text_encoding::decode_text;
 
+pub(super) const MAX_DIFF_BYTES: usize = 768 * 1024;
+pub(super) const MAX_DIFF_LINES: usize = 20_000;
+
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum GitDiffWhitespaceMode {
@@ -52,6 +55,25 @@ impl GitDiffOptions {
 pub struct GitFileDiffPayload {
     pub content: String,
     pub can_revert_hunks: bool,
+    pub byte_length: usize,
+    pub line_count: usize,
+}
+
+pub(super) fn build_diff_payload(
+    content: String,
+    can_revert_hunks: bool,
+) -> Result<GitFileDiffPayload, String> {
+    let byte_length = content.len();
+    let line_count = content.lines().count();
+    if byte_length > MAX_DIFF_BYTES || line_count > MAX_DIFF_LINES {
+        return Err("git_diff_too_large".to_string());
+    }
+    Ok(GitFileDiffPayload {
+        content,
+        can_revert_hunks,
+        byte_length,
+        line_count,
+    })
 }
 
 pub(super) fn get_file_diff(
@@ -186,10 +208,7 @@ fn untracked_diff(root: &Path, file_path: &str) -> Result<GitFileDiffPayload, St
         diff.push_str(line);
         diff.push('\n');
     }
-    Ok(GitFileDiffPayload {
-        content: diff,
-        can_revert_hunks: false,
-    })
+    build_diff_payload(diff, false)
 }
 
 #[cfg(test)]

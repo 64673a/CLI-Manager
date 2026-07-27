@@ -44,6 +44,8 @@ export interface SshRemoteGitSnapshot<T> {
 export interface SshRemoteGitDiff {
   content: string;
   canRevertHunks: boolean;
+  byteLength?: number;
+  lineCount?: number;
 }
 
 export function createSshRemoteGitConsumerId(

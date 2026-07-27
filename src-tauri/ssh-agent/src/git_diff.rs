@@ -7,6 +7,8 @@ use crate::git::{
     resolve_repo, run_git, validate_file_path, GitOutput, MAX_DIFF_BYTES, READ_TIMEOUT,
 };
 
+const MAX_DIFF_LINES: usize = 20_000;
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DiffRequest {
@@ -69,6 +71,25 @@ pub struct DiffWithOptionsRequest {
 pub struct GitFileDiffPayload {
     pub content: String,
     pub can_revert_hunks: bool,
+    pub byte_length: usize,
+    pub line_count: usize,
+}
+
+fn build_diff_payload(
+    content: String,
+    can_revert_hunks: bool,
+) -> Result<GitFileDiffPayload, String> {
+    let byte_length = content.len();
+    let line_count = content.lines().count();
+    if byte_length > MAX_DIFF_BYTES || line_count > MAX_DIFF_LINES {
+        return Err("git_diff_too_large".to_string());
+    }
+    Ok(GitFileDiffPayload {
+        content,
+        can_revert_hunks,
+        byte_length,
+        line_count,
+    })
 }
 
 pub(super) fn legacy_diff(request: DiffRequest) -> Result<GitFileDiffPayload, String> {
@@ -137,15 +158,15 @@ fn untracked_diff(repo: &Path, path: &str) -> Result<GitFileDiffPayload, String>
     validate_untracked_target(&target)?;
     let bytes = fs::read(target).map_err(|_| "remote_git_file_read_failed")?;
     if bytes.len() > MAX_DIFF_BYTES {
-        return Err("remote_git_diff_too_large".to_string());
+        return Err("git_diff_too_large".to_string());
     }
     if bytes.contains(&0) {
-        return Ok(GitFileDiffPayload {
-            content: format!(
+        return build_diff_payload(
+            format!(
                 "diff --git a/{path} b/{path}\nnew file mode 100644\nBinary files /dev/null and b/{path} differ\n"
             ),
-            can_revert_hunks: false,
-        });
+            false,
+        );
     }
     let (text, _) = decode_diff_text(&bytes);
     let line_count = text.lines().count();
@@ -157,10 +178,7 @@ fn untracked_diff(repo: &Path, path: &str) -> Result<GitFileDiffPayload, String>
         content.push_str(line);
         content.push('\n');
     }
-    Ok(GitFileDiffPayload {
-        content,
-        can_revert_hunks: false,
-    })
+    build_diff_payload(content, false)
 }
 
 fn tracked_payload(
@@ -168,7 +186,7 @@ fn tracked_payload(
     options: GitDiffOptions,
 ) -> Result<GitFileDiffPayload, String> {
     if output.stdout.len() > MAX_DIFF_BYTES {
-        return Err("remote_git_diff_too_large".to_string());
+        return Err("git_diff_too_large".to_string());
     }
     let (content, utf8) = decode_diff_text(&output.stdout);
     if content.is_empty() && options.whitespace == GitDiffWhitespaceMode::Exact {
@@ -178,10 +196,10 @@ fn tracked_payload(
         .stdout
         .windows(13)
         .any(|part| part == b"Binary files ");
-    Ok(GitFileDiffPayload {
+    build_diff_payload(
         content,
-        can_revert_hunks: options.whitespace == GitDiffWhitespaceMode::Exact && utf8 && !binary,
-    })
+        options.whitespace == GitDiffWhitespaceMode::Exact && utf8 && !binary,
+    )
 }
 
 fn decode_diff_text(bytes: &[u8]) -> (String, bool) {

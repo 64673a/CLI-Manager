@@ -39,6 +39,12 @@ test("Git diff modules stay split by responsibility", () => {
     read("../src/components/git/diff/reviewNavigation.ts"),
     read("../src/components/git/diff/gitDiffSelection.ts"),
     read("../src/components/git/diff/GitDiffGutter.tsx"),
+    read("../src/components/git/diff/gitDiffParser.ts"),
+    read("../src/components/git/diff/gitDiffParser.worker.ts"),
+    read("../src/components/git/diff/useGitDiffParser.ts"),
+    read("../src/components/git/diff/gitDiffVirtualization.ts"),
+    read("../src/components/git/diff/GitDiffHunkBlock.tsx"),
+    read("../src/components/git/diff/GitDiffHunkList.tsx"),
   ];
   for (const source of modules) {
     assert.ok(source.split(/\r?\n/).length <= 300);

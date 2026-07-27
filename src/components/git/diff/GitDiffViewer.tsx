@@ -120,6 +120,7 @@ export function GitDiffViewer({
       <GitDiffContent
         controller={controller}
         fallbackEditorTheme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+        fileName={target.fileName}
         useTerminalTheme={useTerminalTheme}
         viewMode={viewMode}
       />

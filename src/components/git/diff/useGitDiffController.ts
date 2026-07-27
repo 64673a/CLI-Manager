@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getChangeKey, parseDiff, tokenize } from "react-diff-view";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getChangeKey } from "react-diff-view";
 import { toast } from "sonner";
-import { debugConsoleWarn } from "../../../lib/debugConsole";
+import {
+  normalizeGitDiffPayload,
+  shouldHighlightGitDiff,
+  type GitDiffMetadata,
+} from "../../../lib/gitDiffLimits";
 import { useI18n } from "../../../lib/i18n";
-import { detectLanguage, refractor } from "../diffHighlight";
 import type {
   GitDiffController,
   GitDiffDataSource,
@@ -14,6 +17,7 @@ import type {
 import type { GitDiffHunkPlacement } from "./reviewNavigation";
 import type { GitDiffViewMode } from "../../../stores/settingsStore";
 import { useGitDiffSelection } from "./gitDiffSelection";
+import { useGitDiffParser } from "./useGitDiffParser";
 
 interface UseGitDiffControllerOptions {
   target: GitDiffTarget;
@@ -21,30 +25,6 @@ interface UseGitDiffControllerOptions {
   onReverted?: () => void;
   initialHunkPlacement?: GitDiffHunkPlacement;
   viewMode: GitDiffViewMode;
-}
-
-function parseGitDiff(diffText: string, fileName: string): ParsedGitDiff | null {
-  if (!diffText) return null;
-  try {
-    const [file] = parseDiff(diffText);
-    if (!file) return null;
-
-    const language = detectLanguage(fileName);
-    if (language) {
-      try {
-        return {
-          file,
-          tokens: tokenize(file.hunks, { highlight: true, refractor, language }),
-        };
-      } catch (error) {
-        debugConsoleWarn("[GitDiffViewer] Failed to highlight diff; using plain tokens:", error);
-      }
-    }
-    return { file, tokens: tokenize(file.hunks) };
-  } catch (error) {
-    debugConsoleWarn("[GitDiffViewer] Failed to parse diff:", error);
-    return null;
-  }
 }
 
 function selectedLines(
@@ -80,7 +60,7 @@ export function useGitDiffController({
   const [activeHunkIndex, setActiveHunkIndex] = useState(0);
   const [loadRevision, setLoadRevision] = useState(0);
   const [payloadAllowsPartialRevert, setPayloadAllowsPartialRevert] = useState(false);
-  const hunkAnchorsRef = useRef(new Map<number, HTMLElement>());
+  const [metadata, setMetadata] = useState<GitDiffMetadata>({ byteLength: 0, lineCount: 0 });
   const snapshotContent = dataSource.kind === "snapshot" ? dataSource.content : undefined;
   const liveLoader = dataSource.kind === "live" ? dataSource.load : undefined;
   const mutations = dataSource.kind === "live" ? dataSource.mutations : undefined;
@@ -91,7 +71,11 @@ export function useGitDiffController({
     target.projectPath,
     target.status,
   ]);
-  const parsed = useMemo(() => parseGitDiff(diffText, target.fileName), [diffText, target.fileName]);
+  const parseResult = useGitDiffParser(diffText, metadata.byteLength);
+  const parsed = useMemo<ParsedGitDiff | null>(() => parseResult.file ? {
+    file: parseResult.file,
+    syntaxHighlight: !parseResult.workerFallback && shouldHighlightGitDiff(metadata),
+  } : null, [metadata, parseResult.file, parseResult.workerFallback]);
   const selection = useGitDiffSelection(
     parsed?.file.hunks,
     viewMode,
@@ -102,9 +86,20 @@ export function useGitDiffController({
     selection.clearSelection();
     setError(null);
     setPayloadAllowsPartialRevert(false);
+    setMetadata({ byteLength: 0, lineCount: 0 });
 
     if (snapshotContent !== undefined) {
-      setDiffText(snapshotContent);
+      try {
+        const payload = normalizeGitDiffPayload({
+          content: snapshotContent,
+          canRevertHunks: false,
+        });
+        setDiffText(payload.content);
+        setMetadata({ byteLength: payload.byteLength, lineCount: payload.lineCount });
+      } catch {
+        setDiffText("");
+        setError(t("git.diff.tooLarge"));
+      }
       setLoading(false);
       return;
     }
@@ -122,12 +117,14 @@ export function useGitDiffController({
       .then((payload) => {
         if (cancelled) return;
         setDiffText(payload.content);
+        setMetadata({ byteLength: payload.byteLength, lineCount: payload.lineCount });
         setPayloadAllowsPartialRevert(payload.canRevertHunks);
       })
       .catch((loadError) => {
         if (cancelled) return;
         const message = loadError instanceof Error ? loadError.message : String(loadError);
         if (message.includes("binary_file")) setError(t("files.error.binaryFile"));
+        else if (message.includes("git_diff_too_large")) setError(t("git.diff.tooLarge"));
         else if (message.includes("ssh_agent_capability_missing:gitDiffOptions")) {
           setError(t("git.diff.sshAgentUpgradeRequired"));
         }
@@ -158,10 +155,6 @@ export function useGitDiffController({
     && !payloadAllowsPartialRevert
     && parsed !== null;
 
-  const registerHunkAnchor = useCallback((hunkIndex: number, element: HTMLElement | null) => {
-    if (element) hunkAnchorsRef.current.set(hunkIndex, element);
-    else hunkAnchorsRef.current.delete(hunkIndex);
-  }, []);
   const goToHunk = useCallback((hunkIndex: number) => {
     if (hunkCount === 0) return;
     const nextIndex = Math.min(Math.max(hunkIndex, 0), hunkCount - 1);
@@ -206,20 +199,9 @@ export function useGitDiffController({
     setActiveHunkIndex(initialHunkPlacement === "last" && hunkCount > 0 ? hunkCount - 1 : 0);
   }, [hunkCount, initialHunkPlacement, stableTarget.id]);
 
-  useEffect(() => {
-    if (hunkCount === 0) return;
-    const frame = window.requestAnimationFrame(() => {
-      hunkAnchorsRef.current.get(activeHunkIndex)?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [activeHunkIndex, hunkCount, stableTarget.id]);
-
   return {
     diffText,
-    loading,
+    loading: loading || parseResult.parsing,
     reverting,
     error,
     parsed,
@@ -238,7 +220,6 @@ export function useGitDiffController({
     ),
     clearSelection: selection.clearSelection,
     goToHunk,
-    registerHunkAnchor,
     requestDiscard,
     revertHunk,
     revertSelectedLines,

@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use std::path::Path;
 
 use super::git::format_diff_to_text_allow_empty;
-use super::git_diff::{GitDiffOptions, GitDiffWhitespaceMode, GitFileDiffPayload};
+use super::git_diff::{
+    build_diff_payload, GitDiffOptions, GitDiffWhitespaceMode, GitFileDiffPayload,
+};
 use crate::text_encoding::{decode_text, decode_text_fragment, is_utf8_encoding, DecodedText};
 
 pub(super) fn format_cli_diff(
@@ -19,10 +21,7 @@ pub(super) fn format_cli_diff(
         return Err(format!("文件 {file_path} 无变更"));
     }
     let binary = bytes.windows(13).any(|window| window == b"Binary files ");
-    Ok(GitFileDiffPayload {
-        content,
-        can_revert_hunks: options.allows_partial_revert() && utf8 && !binary,
-    })
+    build_diff_payload(content, options.allows_partial_revert() && utf8 && !binary)
 }
 
 pub(super) fn detect_file_diff_encoding(
@@ -89,10 +88,10 @@ pub(super) fn format_diff_for_display(
         return Err(format!("文件 {file_path} 无变更"));
     }
     log::debug!("[git_get_file_diff] diff 生成成功，长度: {}", content.len());
-    Ok(GitFileDiffPayload {
+    build_diff_payload(
         content,
-        can_revert_hunks: options.allows_partial_revert() && encoding_allows_revert,
-    })
+        options.allows_partial_revert() && encoding_allows_revert,
+    )
 }
 
 fn collect_diff_body_bytes(diff: &git2::Diff) -> Result<Vec<u8>, String> {

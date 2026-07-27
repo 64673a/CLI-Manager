@@ -12,7 +12,7 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const selected = (state) => [...state.selectedKeys].sort();
 
 test("single selection toggles and records an anchor", () => {
-  const order = createGitDiffSelectionOrder([{ key: "D1", side: "old" }]);
+  const order = createGitDiffSelectionOrder([{ key: "D1", side: "old", hunkIndex: 0 }]);
   const first = applyGitDiffSelection(createGitDiffSelectionState(), {
     target: order.changes[0],
     order,
@@ -33,13 +33,13 @@ test("single selection toggles and records an anchor", () => {
 
 test("split ranges keep old and new anchors independent", () => {
   const oldOrder = createGitDiffSelectionOrder([
-    { key: "D1", side: "old" },
-    { key: "D3", side: "old" },
-    { key: "D5", side: "old" },
+    { key: "D1", side: "old", hunkIndex: 0 },
+    { key: "D3", side: "old", hunkIndex: 1 },
+    { key: "D5", side: "old", hunkIndex: 2 },
   ]);
   const newOrder = createGitDiffSelectionOrder([
-    { key: "I2", side: "new" },
-    { key: "I4", side: "new" },
+    { key: "I2", side: "new", hunkIndex: 0 },
+    { key: "I4", side: "new", hunkIndex: 1 },
   ]);
   let state = applyGitDiffSelection(createGitDiffSelectionState(), {
     target: newOrder.changes[0], order: newOrder, scope: "new", extend: false,
@@ -58,9 +58,9 @@ test("split ranges keep old and new anchors independent", () => {
 
 test("unified range skips the opposite side and resets on a cross-side anchor", () => {
   const order = createGitDiffSelectionOrder([
-    { key: "D1", side: "old" },
-    { key: "I1", side: "new" },
-    { key: "D2", side: "old" },
+    { key: "D1", side: "old", hunkIndex: 0 },
+    { key: "I1", side: "new", hunkIndex: 0 },
+    { key: "D2", side: "old", hunkIndex: 1 },
   ]);
   let state = applyGitDiffSelection(createGitDiffSelectionState(), {
     target: order.changes[0], order, scope: "unified", extend: false,
@@ -79,9 +79,9 @@ test("unified range skips the opposite side and resets on a cross-side anchor", 
 
 test("keyboard adjacency follows visible order on the same side", () => {
   const order = createGitDiffSelectionOrder([
-    { key: "D1", side: "old" },
-    { key: "I1", side: "new" },
-    { key: "D2", side: "old" },
+    { key: "D1", side: "old", hunkIndex: 0 },
+    { key: "I1", side: "new", hunkIndex: 0 },
+    { key: "D2", side: "old", hunkIndex: 1 },
   ]);
   assert.equal(findAdjacentGitDiffChange(order, "D1", "old", 1)?.key, "D2");
   assert.equal(findAdjacentGitDiffChange(order, "D2", "old", -1)?.key, "D1");
@@ -90,14 +90,14 @@ test("keyboard adjacency follows visible order on the same side", () => {
 
 test("gutter and selection status expose keyboard and non-color semantics", () => {
   const gutter = read("../src/components/git/diff/GitDiffGutter.tsx");
-  const content = read("../src/components/git/diff/GitDiffContent.tsx");
+  const hunkList = read("../src/components/git/diff/GitDiffHunkList.tsx");
   const selectionBar = read("../src/components/git/diff/GitDiffSelectionBar.tsx");
 
   assert.match(gutter, /aria-pressed=\{selected\}/);
   assert.match(gutter, /git-diff-gutter-marker/);
   assert.match(gutter, /<Check/);
-  assert.match(content, /event\.key === "Enter" \|\| event\.key === " "/);
-  assert.match(content, /"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"/);
+  assert.match(hunkList, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(hunkList, /"ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"/);
   assert.match(selectionBar, /role="status"/);
   assert.match(selectionBar, /aria-live="polite"/);
 });

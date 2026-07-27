@@ -1,4 +1,7 @@
-use super::{cli_diff_args, get_file_diff, GitDiffOptions, GitDiffWhitespaceMode};
+use super::{
+    build_diff_payload, cli_diff_args, get_file_diff, GitDiffOptions, GitDiffWhitespaceMode,
+    MAX_DIFF_BYTES, MAX_DIFF_LINES,
+};
 use git2::{IndexAddOption, Repository, Signature};
 use std::fs;
 use tempfile::TempDir;
@@ -62,6 +65,27 @@ fn options_accept_only_supported_context_lines() {
             .validate()
             .unwrap_err(),
         "git_diff_options_invalid"
+    );
+}
+
+#[test]
+fn payload_limits_are_inclusive_and_report_metadata() {
+    let byte_boundary = "a".repeat(MAX_DIFF_BYTES);
+    let payload = build_diff_payload(byte_boundary, true).unwrap();
+    assert_eq!(payload.byte_length, MAX_DIFF_BYTES);
+    assert_eq!(payload.line_count, 1);
+    assert!(payload.can_revert_hunks);
+    assert_eq!(
+        build_diff_payload("a".repeat(MAX_DIFF_BYTES + 1), false).unwrap_err(),
+        "git_diff_too_large"
+    );
+
+    let line_boundary = "x\n".repeat(MAX_DIFF_LINES);
+    let payload = build_diff_payload(line_boundary, false).unwrap();
+    assert_eq!(payload.line_count, MAX_DIFF_LINES);
+    assert_eq!(
+        build_diff_payload("x\n".repeat(MAX_DIFF_LINES + 1), false).unwrap_err(),
+        "git_diff_too_large"
     );
 }
 

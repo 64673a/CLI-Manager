@@ -127,6 +127,17 @@ CLI_MANAGER_SSH_AGENT/1 <nonce>\n
 
 Frames use a four-byte big-endian length followed by UTF-8 JSON. The maximum frame size is 1 MiB.
 
+Remote Git Diff responses contain:
+
+```rust
+GitFileDiffPayload {
+    content: String,
+    can_revert_hunks: bool,
+    byte_length: usize,
+    line_count: usize,
+}
+```
+
 ## 3. Contracts
 
 - Interactive PTY and one-shot execution must share authentication, port, config alias, timeout, KeepAlive, identity, AskPass, ProxyJump, and ProxyCommand generation.
@@ -143,6 +154,9 @@ Frames use a four-byte big-endian length followed by UTF-8 JSON. The maximum fra
 - The full remote Git panel additionally requires protocol minor 7 and the explicit `gitFull` capability; capability absence blocks Git only and never falls back to local Git commands or the read-only lane.
 - Non-default remote Diff generation uses `gitDiffWithOptions` and requires the protocol-minor-8 `gitDiffOptions` capability. The daemon checks the negotiated capability before frame serialization. Default `exact+3` must use legacy `gitDiff` without an `options` field so Agents `0.1.1` through `0.1.4` remain compatible.
 - Agent Diff options accept only whitespace `exact | ignore-eol | ignore-all` and context `3 | 10 | 20`. Invalid fields or values are rejected at deserialization/validation; non-exact payloads always set `canRevertHunks=false`.
+- Every tracked, untracked, legacy, and option-aware Agent Diff response passes through one final payload gate. More than 768 KiB or 20000 Rust `str::lines()` is `git_diff_too_large`; never return a truncated patch or partial-revert capability.
+- `byteLength` and `lineCount` are additive response fields. New Desktop builds derive them when an older Agent omits them, so this does not require a new request kind or capability.
+- Diff limits apply to existing text handling only. Remote image, office, archive, audio, and video Diff are not introduced by `gitFull` or `gitDiffOptions`.
 - Desktop install and the HTTP(S) script consume the same schema-1 release manifest and Tauri updater Minisign trust root. The signature covers manifest bytes; the manifest pins channel, semantic version, protocol range, Linux target, URL, size, and SHA-256.
 - Release URLs default to HTTPS. HTTP requires explicit user opt-in, never permits embedded credentials, query strings, or fragments, and still requires a valid signature. Manifest, signature, and artifact downloads are bounded.
 - Install preview is read-only. Confirmation re-fetches and re-verifies the manifest before downloading or opening SSH, preventing a stale preview from authorizing different bytes.
@@ -260,6 +274,7 @@ Frames use a four-byte big-endian length followed by UTF-8 JSON. The maximum fra
 | Git capability `gitFull` is absent | `ssh_agent_capability_missing:gitFull`; do not downgrade to read-only or local Git |
 | Non-default Diff requested without `gitDiffOptions` | `ssh_agent_capability_missing:gitDiffOptions`; reject before writing to the Agent |
 | Diff context is not `3`, `10`, or `20` | `remote_git_diff_options_invalid`; do not execute Git |
+| Final Diff exceeds 768 KiB or 20000 lines | `git_diff_too_large`; no partial Patch response |
 | Untracked Git diff target is a symlink or directory | `remote_git_symlink_rejected`; do not follow or read the target |
 | Git status contains an ordinary untracked directory | enumerate its files with `--untracked-files=all`; never return a trailing-slash pseudo-file |
 | Git path list exceeds count or aggregate byte bound | `remote_git_paths_invalid` |
@@ -296,6 +311,8 @@ Frames use a four-byte big-endian length followed by UTF-8 JSON. The maximum fra
 - Good: an untracked `test/c.txt` is returned as that exact file path; a nested repository remains in repository enumeration and does not become a blank file row in its parent repository.
 - Good: Agent `0.1.4` receives field-compatible legacy `gitDiff` for `exact+3`; Agent `0.1.5` receives `gitDiffWithOptions` only after advertising `gitDiffOptions`.
 - Base: ignored whitespace removes every visible Hunk; return an empty payload with partial revert disabled instead of the legacy exact-mode empty-Diff error.
+- Good: an older Agent omits Diff metadata; Desktop derives it and still rejects content above the same hard limits.
+- Bad: return `remote_git_diff_too_large` on one path and `git_diff_too_large` on another, or truncate before enabling revert.
 - Bad: serialize a non-default Diff request before checking capabilities, or include `options` in a legacy request whose payload denies unknown fields.
 - Bad: let a missing SSH context make `createGitTransport` silently choose the local transport, or allow a symlinked untracked file to be read by `fs::read`.
 - Bad: validate an allowed-empty `repoPath` with the same non-empty path-segment check as file paths; the root repository then fails every Git read with `remote_git_path_invalid`.
@@ -330,6 +347,7 @@ Frames use a four-byte big-endian length followed by UTF-8 JSON. The maximum fra
 - Assert remote file root/path confinement, symlink escape rejection, binary refusal, 1 MiB text and 5 MiB image limits, the exact 12,000,000-pixel boundary, video refusal, directory/search/visited limits, image data URLs, request-driven read-only scheduling, primary Hook-poll exclusion, loaded-directory reuse, consumer release, and UI/store read-only routing.
 - Assert protocol minor 7 and `gitFull`, dedicated Git-lane serialization and identity isolation, exact launch-root binding, strict per-RPC payloads, full Git mutation/network operations, write timeout/no-retry result-unknown handling, path/branch/patch validation, untracked symlink rejection, and SSH-pending fail-closed transport selection.
 - Assert protocol minor 8 and `gitDiffOptions`, legacy `exact+3` payload compatibility, pre-serialization capability rejection, all three whitespace flags, 3/10/20 context values, invalid-option rejection, and non-exact partial-revert disablement.
+- Assert tracked/untracked payload metadata, inclusive 768 KiB and 20000-line boundaries, and stable `git_diff_too_large` parity with Desktop.
 - Assert `validate_relative("", true)` succeeds for the root repository, while `validate_relative("", false)` and empty file paths remain rejected.
 - Assert ordinary untracked directories expand to concrete files and nested repositories are excluded from the parent repository's change list.
 - Assert manifest tampering, duplicate/unknown targets, HTTP opt-in, query/fragment rejection, target selection, size/SHA-256 mismatch, and bounded downloads.
@@ -391,6 +409,20 @@ request(
 ```
 
 The daemon rejects `gitDiffWithOptions` before writing a frame when `gitDiffOptions` was not negotiated.
+
+### Wrong: return one Diff path without the final size gate
+
+```rust
+Ok(GitFileDiffPayload { content, can_revert_hunks })
+```
+
+### Correct: converge every Agent Diff path on one payload builder
+
+```rust
+build_diff_payload(content, can_revert_hunks)
+```
+
+This keeps tracked, untracked, legacy, and option-aware requests on the same metadata and `git_diff_too_large` contract.
 
 ### Wrong: treat an SSH Git request as local when the Agent context is not ready
 

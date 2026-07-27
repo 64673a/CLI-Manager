@@ -50,13 +50,23 @@
 ```rust
 /// 尾部 '/' 且目录内存在 .git（目录或文件形式，覆盖 submodule/worktree gitlink）→ true
 fn is_nested_repo_entry(repo: &Repository, file_path: &str) -> bool
+```
 
 Git 文件 Diff 返回结构化展示结果：
 
 ```rust
-GitFileDiffPayload { content: String, can_revert_hunks: bool }
-git_get_file_diff(project_path: String, file_path: String, status: String) -> Result<GitFileDiffPayload, String>
-```
+GitFileDiffPayload {
+    content: String,
+    can_revert_hunks: bool,
+    byte_length: usize,
+    line_count: usize,
+}
+git_get_file_diff(
+    project_path: String,
+    file_path: String,
+    status: String,
+    options: Option<GitDiffOptions>,
+) -> Result<GitFileDiffPayload, String>
 ```
 
 ### Contracts
@@ -70,6 +80,9 @@ git_get_file_diff(project_path: String, file_path: String, status: String) -> Re
 - 已跟踪非 UTF-8 文本的 UI Diff 可强制按文本生成并按检测编码解码；`can_revert_hunks=false`，前端必须禁用行级/Hunk 级 Patch 回滚，但整文件回滚仍可用。
 - UTF-8 UI Diff 保持原 Patch 文本并返回 `can_revert_hunks=true`。
 - Worktree Snapshot/恢复继续使用原 `format_diff_to_text_allow_empty` Patch 链路，不得消费转码后的 UI Diff。
+- Desktop native 与 WSL UI Diff 必须在返回 WebView 前统一经过 `build_diff_payload`。最终 Patch 大于 768 KiB 或 20000 行时返回 `git_diff_too_large`，不得截断。
+- `byte_length` 使用 UTF-8 Patch 字节数，`line_count` 使用 Rust `str::lines()` 语义；Windows、Linux、macOS native 与 WSL CLI 输出必须一致。
+- 大 Diff 限制不改变文件类型支持：二进制、图片和其他非文本内容继续走既有拒绝或只读路径。
 
 ### Validation & Error Matrix
 
@@ -80,12 +93,15 @@ git_get_file_diff(project_path: String, file_path: String, status: String) -> Re
 | diff 请求路径为目录 | `Err("该条目是目录（可能为嵌套 Git 仓库），无法显示文件 diff")` |
 | 非 UTF-8 文本 Diff | 返回可读 `content`，`canRevertHunks=false` |
 | UTF-8 文本 Diff | 返回原 Patch `content`，`canRevertHunks=true` |
+| Patch 恰好为 768 KiB 或 20000 行 | 返回完整 payload 和精确元数据 |
+| Patch 超过 768 KiB 或 20000 行 | `Err("git_diff_too_large")`，不返回可回滚内容 |
 
 ### Tests
 
 - `commands::git::tests::collect_git_changes_skips_nested_repo_dir`（正例 + 反例）
 - `commands::git::tests::is_nested_repo_entry_detects_nested_repo_dir_only`
 - Agent `git::tests::changes_expands_untracked_directories_and_skips_nested_repositories`
+- `commands::git_diff::tests::payload_limits_are_inclusive_and_report_metadata`
 - 手工夹具：`D:\github\nested-git-test`（一级/二级嵌套仓库 + node_modules 假 .git）
 
 ### Wrong vs Correct
@@ -96,6 +112,14 @@ git_get_file_diff(project_path: String, file_path: String, status: String) -> Re
 
 // Correct: 普通目录展开到具体文件，随后仅过滤嵌套仓库目录条目。
 &["status", "--porcelain=v1", "-z", "--untracked-files=all"]
+```
+
+```rust
+// Wrong: return an unbounded or truncated patch directly to the WebView.
+Ok(GitFileDiffPayload { content, can_revert_hunks })
+
+// Correct: every native/WSL display path shares the final payload gate.
+build_diff_payload(content, can_revert_hunks)
 ```
 
 ### 已知未覆盖（后续项）

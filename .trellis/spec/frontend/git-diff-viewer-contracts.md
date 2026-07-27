@@ -17,9 +17,12 @@
 ## Component Responsibilities
 
 - `DiffViewerModal.tsx`: compatibility adapter, portal, overlay, and keyboard lifecycle only.
-- `diff/useGitDiffController.ts`: load state, parsing, tokenization, selection, and mutation orchestration.
+- `diff/useGitDiffController.ts`: load state, metadata, selection, and mutation orchestration.
 - `diff/GitDiffViewer.tsx`: composition only.
 - `diff/GitDiffContent.tsx`: loading/error/empty/parsed/fallback rendering.
+- `diff/useGitDiffParser.ts` and `diff/gitDiffParser.worker.ts`: sync/Worker parse policy, generation cancellation, and fallback state.
+- `diff/GitDiffHunkList.tsx`: Hunk virtualization, measurement, scroll, and cross-Hunk focus restoration.
+- `diff/GitDiffHunkBlock.tsx`: one mounted Hunk, threshold-gated tokenization, gutter events, and Hunk revert command.
 - `diff/GitDiffHeader.tsx`: file-level commands and close action.
 - `diff/GitDiffSelectionBar.tsx`: partial-revert status and selected-line commands.
 - `diff/types.ts`: target, data-source, mutation, parse, and controller contracts.
@@ -276,6 +279,80 @@ findAdjacentGitDiffChange(order, currentKey, side, direction): GitDiffSelectable
 - Assert focusable gutters expose marker, check, and pressed semantics; selection count uses `aria-live`.
 - Run shared Viewer architecture, navigation, generation-option, settings, and pinned-editor regressions.
 
+## Large Diff Performance And Limits
+
+### 1. Scope / Trigger
+
+- Applies to shared text Diff rendering for snapshot and live sources on Windows, Linux, macOS, WSL, and SSH.
+- It changes parsing and rendering policy only. Binary, image, office, archive, audio, and video Diff support must not be added here; the supported file types and existing read-only fallbacks remain unchanged.
+
+### 2. Signatures
+
+```ts
+interface GitFileDiffPayload {
+  content: string;
+  canRevertHunks: boolean;
+  byteLength: number;
+  lineCount: number;
+}
+
+normalizeGitDiffPayload(payload: {
+  content: string;
+  canRevertHunks: boolean;
+  byteLength?: number;
+  lineCount?: number;
+}): GitFileDiffPayload;
+```
+
+### 3. Contracts
+
+- Diff content at or below 64 KiB parses synchronously; larger accepted content parses in `gitDiffParser.worker.ts`.
+- Each Worker request carries a generation. Cleanup invalidates the generation and terminates the Worker; success or fallback also terminates it immediately and settles only once.
+- Worker failure falls back to main-thread parsing with syntax highlighting disabled. Only parsing failure enters the existing read-only Monaco raw-patch fallback.
+- Syntax highlighting is enabled only at or below both 256 KiB and 5000 lines. Mounted Hunk blocks tokenize independently; unmounted Hunks create neither tokens nor row DOM.
+- `GitDiffHunkList` virtualizes by Hunk with dynamic measurement. Keyboard navigation may scroll an unmounted target Hunk first, but it must restore focus only if the pending file identity still matches.
+- Local and SSH transports normalize payload metadata at their boundary. Missing metadata from an older Agent is derived with UTF-8 byte length and Rust `str::lines()` semantics.
+- Content above 768 KiB or 20000 lines is rejected with `git_diff_too_large`; it is never truncated and never exposes Hunk/line revert actions.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| `byteLength <= 64 KiB` | Parse synchronously |
+| `byteLength > 64 KiB` within hard limits | Parse in Worker; toolbar and close remain responsive |
+| `byteLength > 256 KiB` or `lineCount > 5000` | Render insert/delete/Hunk styles without syntax tokens |
+| Worker construction, execution, or response failure | Terminate once; parse on main thread without highlighting |
+| Target/content changes while Worker or virtual focus is pending | Ignore old result and old focus request |
+| `byteLength > 768 KiB` or `lineCount > 20000` | Localized `git.diff.tooLarge`; no partial-revert entry |
+| Parser rejects otherwise accepted text | Read-only Monaco raw-patch fallback |
+
+### 5. Good / Base / Bad Cases
+
+- Good: an accepted 300 KiB SSH Diff parses in a Worker and renders virtualized plain Hunks without syntax highlighting.
+- Base: a 20 KiB snapshot parses synchronously and keeps the existing read-only behavior.
+- Good: Agent `0.1.4` omits metadata; the transport derives it before the shared Viewer receives the payload.
+- Bad: tokenize all Hunks before virtualization, keep a completed Worker alive, or let an old Worker overwrite a newly selected file.
+- Bad: truncate an oversized patch and leave revert controls enabled; a truncated patch is not a valid mutation source.
+
+### 6. Tests Required
+
+- Assert inclusive boundaries for 64 KiB, 256 KiB, 5000 lines, 768 KiB, and 20000 lines.
+- Assert UTF-8 byte and Rust line-count compatibility for legacy payloads, including legacy payloads above both hard limits.
+- Assert generation invalidation, settle-time Worker termination, fallback highlight disablement, Hunk virtualization, dynamic measurement, and cross-Hunk keyboard focus.
+- Run shared architecture, navigation, generation-option, accessibility, local Transport, SSH Transport, Desktop Rust, and Agent Rust regressions plus the production frontend build.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: parse and tokenize the entire accepted patch during render.
+const file = parseDiff(content)[0];
+const tokens = tokenize(file.hunks, { highlight: true, refractor, language });
+
+// Correct: parse large content off-thread and tokenize only mounted Hunks under the threshold.
+const parsed = useGitDiffParser(content, byteLength);
+const syntaxHighlight = !parsed.workerFallback && shouldHighlightGitDiff(metadata);
+```
+
 ## Verification
 
 Run:
@@ -287,4 +364,5 @@ node --test scripts/gitDiffReviewNavigation.test.mjs scripts/gitDiffSettings.tes
 node --test scripts/gitTransportLease.test.mjs scripts/gitDiffWorkspace.test.mjs scripts/gitDiffEditorPin.test.mjs
 node --test scripts/gitDiffGenerationOptions.test.mjs
 node --test scripts/gitDiffInteractionA11y.test.mjs
+node --test scripts/gitDiffLargePerformance.test.mjs
 ```

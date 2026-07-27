@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import {
+  normalizeGitDiffPayload,
+  type NormalizedGitDiffPayload,
+} from "./gitDiffLimits";
 import type { GitDiffOptions } from "./gitDiffOptions";
 import type { GitBranchInfo, GitBranchStatus, GitFileChange, GitPullStrategy } from "./types";
 import {
@@ -37,10 +41,7 @@ export interface GitRepositoryRef {
   branch: string | null;
 }
 
-export interface GitFileDiffPayload {
-  content: string;
-  canRevertHunks: boolean;
-}
+export interface GitFileDiffPayload extends NormalizedGitDiffPayload {}
 
 export interface GitTransport {
   readonly contextKey: string;
@@ -76,12 +77,14 @@ export function createLocalGitTransport(projectRoot: string): GitTransport {
     remote: false,
     listRepositories: async () => localResult(await invoke<GitRepositoryRef[]>("git_list_repositories", { projectPath: projectRoot })),
     getChanges: async (repoId) => localResult(await invoke<GitFileChange[]>("git_get_changes", { projectPath: repoId })),
-    getFileDiff: async (repoId, filePath, status, options) => localResult(await invoke<GitFileDiffPayload>("git_get_file_diff", {
-      projectPath: repoId,
-      filePath,
-      status,
-      options,
-    })),
+    getFileDiff: async (repoId, filePath, status, options) => localResult(normalizeGitDiffPayload(
+      await invoke<GitFileDiffPayload>("git_get_file_diff", {
+        projectPath: repoId,
+        filePath,
+        status,
+        options,
+      }),
+    )),
     getBranchStatus: async (repoId) => localResult(await invoke<GitBranchStatus>("git_branch_status", { projectPath: repoId })),
     listBranches: async (repoId) => localResult(await invoke<GitBranchInfo[]>("git_list_branches", { projectPath: repoId })),
     stage: async (repoId, paths) => { await invoke("git_stage_paths", { projectPath: repoId, paths }); },
@@ -114,7 +117,10 @@ export function createSshGitTransport(context: SshRemoteGitContext): GitTranspor
       return { value: result.value.map((repo) => ({ relativePath: repo.relativePath, absolutePath: repo.repoId, branch: repo.branch })), asOf: result.asOf };
     },
     getChanges: (repoId) => sshRemoteGitChanges(context, repoId),
-    getFileDiff: (repoId, path, status, options) => sshRemoteGitDiff(context, repoId, path, status, options),
+    getFileDiff: async (repoId, path, status, options) => {
+      const result = await sshRemoteGitDiff(context, repoId, path, status, options);
+      return { ...result, value: normalizeGitDiffPayload(result.value) };
+    },
     getBranchStatus: (repoId) => sshRemoteGitBranchStatus(context, repoId),
     listBranches: (repoId) => sshRemoteGitBranches(context, repoId),
     stage: async (repoId, paths) => { await sshRemoteGitStage(context, repoId, paths); },

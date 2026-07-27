@@ -1,6 +1,10 @@
-use super::{diff_args, validate_untracked_target, GitDiffOptions, GitDiffWhitespaceMode};
+use super::{
+    build_diff_payload, diff_args, validate_untracked_target, GitDiffOptions,
+    GitDiffWhitespaceMode, MAX_DIFF_LINES,
+};
 #[cfg(unix)]
 use super::{diff_with_options, DiffWithOptionsRequest};
+use crate::git::MAX_DIFF_BYTES;
 use std::fs;
 #[cfg(unix)]
 use std::process::Command;
@@ -91,6 +95,24 @@ fn invalid_context_lines_are_rejected() {
             .validate()
             .unwrap_err(),
         "remote_git_diff_options_invalid"
+    );
+}
+
+#[test]
+fn payload_limits_match_desktop_and_report_metadata() {
+    let payload = build_diff_payload("a".repeat(MAX_DIFF_BYTES), true).unwrap();
+    assert_eq!(payload.byte_length, MAX_DIFF_BYTES);
+    assert_eq!(payload.line_count, 1);
+    assert_eq!(
+        build_diff_payload("a".repeat(MAX_DIFF_BYTES + 1), false).unwrap_err(),
+        "git_diff_too_large"
+    );
+
+    let payload = build_diff_payload("x\n".repeat(MAX_DIFF_LINES), false).unwrap();
+    assert_eq!(payload.line_count, MAX_DIFF_LINES);
+    assert_eq!(
+        build_diff_payload("x\n".repeat(MAX_DIFF_LINES + 1), false).unwrap_err(),
+        "git_diff_too_large"
     );
 }
 

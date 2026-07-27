@@ -8,6 +8,7 @@
 - Git Diff 弹窗可将当前文件固定到项目文件编辑器，支持多标签、实时刷新、跨文件/Hunk 导航以及整文件、Hunk、行级回滚；固定页与 Git 面板通过引用计数共享本地、WSL 或 SSH Transport，面板关闭、Workspan 切换和嵌套仓库同路径均不会串用上下文。
 - Git Diff 新增精确比较、忽略行尾空白、忽略全部空白以及 3/10/20 行上下文选项，设置会持久化并参与偏好同步；本地 libgit2、WSL Git CLI 与 SSH Agent 返回一致语义，忽略空白时禁用 Hunk/行级回滚。SSH 默认选项兼容旧 Agent，非默认选项通过 Agent `0.1.5`、协议 `1.8` 的 `gitDiffOptions` capability 协商。
 - Git Diff 行级回滚支持单击、Shift 连续范围、Enter/Space 和 Shift+方向键选择；Split 两侧独立维护选择锚点，选中状态具有非颜色标记与无障碍播报。Diff 弹窗改用标准焦点锁定和恢复，并在输入法组合期间忽略 Esc。
+- Git Diff 超过 64 KiB 后改用 Worker 解析，按 Hunk 虚拟化并仅为已挂载 Hunk 生成高亮；超过 256 KiB 或 5000 行时关闭语法高亮，超过 768 KiB 或 20000 行时由 Desktop、WSL 与 SSH 统一拒绝且不提供部分回滚。旧 SSH Agent 缺少大小元数据时由 Transport 兼容补算，文件类型支持范围保持不变。
 
 ## [V1.3.2] - 2026-07-27
 

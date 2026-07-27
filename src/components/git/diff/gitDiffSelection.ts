@@ -6,6 +6,7 @@ import type { GitDiffLineSide } from "./types";
 export interface GitDiffSelectableChange {
   key: string;
   side: GitDiffLineSide;
+  hunkIndex: number;
 }
 
 export interface GitDiffSelectionOrder {
@@ -131,11 +132,11 @@ function buildSelectionOrders(hunks: readonly HunkData[] | undefined): GitDiffSe
     GitDiffSelectionScope,
     GitDiffSelectableChange[]
   >;
-  for (const hunk of hunks ?? []) {
+  for (const [hunkIndex, hunk] of (hunks ?? []).entries()) {
     for (const change of hunk.changes) {
       const side = gitDiffChangeSide(change);
       if (!side) continue;
-      const selectable = { key: getChangeKey(change), side };
+      const selectable = { key: getChangeKey(change), side, hunkIndex };
       changes[side].push(selectable);
       changes.unified.push(selectable);
     }
@@ -164,8 +165,10 @@ export function useGitDiffSelection(
     if (!change) return;
     const side = gitDiffChangeSide(change);
     if (!side) return;
-    const target = { key: getChangeKey(change), side };
     const scope = viewMode === "split" ? side : "unified";
+    const targetIndex = orders[scope].indexByKey.get(getChangeKey(change));
+    if (targetIndex === undefined) return;
+    const target = orders[scope].changes[targetIndex];
     setState((current) => applyGitDiffSelection(current, {
       target,
       order: orders[scope],
@@ -177,12 +180,14 @@ export function useGitDiffSelection(
   const extendSelectionFromKeyboard = useCallback((
     change: ChangeData | null,
     direction: -1 | 1,
-  ): string | null => {
+  ): GitDiffSelectableChange | null => {
     if (!change) return null;
     const side = gitDiffChangeSide(change);
     if (!side) return null;
-    const current = { key: getChangeKey(change), side };
     const scope = viewMode === "split" ? side : "unified";
+    const currentIndex = orders[scope].indexByKey.get(getChangeKey(change));
+    if (currentIndex === undefined) return null;
+    const current = orders[scope].changes[currentIndex];
     const next = findAdjacentGitDiffChange(orders[scope], current.key, side, direction);
     if (!next) return null;
     setState((previous) => {
@@ -196,7 +201,7 @@ export function useGitDiffSelection(
         extend: true,
       });
     });
-    return next.key;
+    return next;
   }, [orders, viewMode]);
 
   const clearSelection = useCallback(() => setState(createGitDiffSelectionState()), []);
