@@ -74,6 +74,13 @@ export async function buildSshRemoteFileContext(project: Project): Promise<SshRe
   };
 }
 
+export async function releaseSshRemoteFileContext(context: SshRemoteFileContext): Promise<void> {
+  await invoke("history_remote_close", {
+    hostId: context.launch.hostId,
+    consumerId: context.consumerId,
+  });
+}
+
 export async function sshRemoteListDir(
   context: SshRemoteFileContext,
   relativePath = "",

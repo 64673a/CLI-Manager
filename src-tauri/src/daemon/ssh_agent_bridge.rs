@@ -28,6 +28,7 @@ const MAX_HISTORY_DETAIL_CHUNKS: usize = 257;
 const MAX_HISTORY_DETAIL_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 const HOOK_DRAIN_WAIT_MS: u64 = 2_000;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+const REQUEST_QUEUE_WAIT: Duration = Duration::from_millis(250);
 const STABLE_CONNECTION_RESET: Duration = Duration::from_secs(30);
 const RETRY_BASE_SECONDS: [u64; 6] = [1, 2, 5, 10, 30, 60];
 
@@ -164,6 +165,11 @@ impl BridgeControl {
             .is_ok()
     }
 
+    fn try_reserve_idle_activity(&self) -> Option<BridgeIdleReservation<'_>> {
+        self.try_reserve_idle()
+            .then_some(BridgeIdleReservation { control: self })
+    }
+
     fn release_request(&self) {
         let released =
             self.pending_requests
@@ -184,6 +190,16 @@ impl BridgeControl {
                 terminate_child(&mut child);
             }
         }
+    }
+}
+
+struct BridgeIdleReservation<'a> {
+    control: &'a BridgeControl,
+}
+
+impl Drop for BridgeIdleReservation<'_> {
+    fn drop(&mut self) {
+        self.control.release_request();
     }
 }
 
@@ -278,6 +294,10 @@ impl BridgeLane {
         } else {
             Self::Primary
         }
+    }
+
+    fn is_request_driven(self) -> bool {
+        self != Self::Primary
     }
 }
 
@@ -707,6 +727,82 @@ fn request_error_requires_disconnect(error: &str) -> bool {
 
 fn bridge_failure_should_fail_pending(error: &str) -> bool {
     error != "bridge_already_active"
+}
+
+fn handle_agent_request(
+    writer: &mut impl Write,
+    reader_receiver: &Receiver<ReaderMessage>,
+    plan: &SshLaunchPlan,
+    request_number: &mut u64,
+    agent_request: AgentBridgeRequest,
+) -> Result<(), String> {
+    let request_id = format!("agent-request-{}", *request_number);
+    *request_number = request_number.saturating_add(1);
+    let kind = agent_request.kind.clone();
+    let started_at = Instant::now();
+    let result = request(
+        writer,
+        reader_receiver,
+        request_id,
+        &agent_request.kind,
+        agent_request.payload,
+        "response",
+        response_timeout(&kind),
+    );
+    let elapsed = started_at.elapsed();
+    if let Err(error) = &result {
+        log::warn!(
+            "SSH Agent request failed: host_id={} kind={} elapsed_ms={} error={}",
+            plan.host_id,
+            kind,
+            elapsed.as_millis(),
+            error
+        );
+    } else {
+        log::debug!(
+            "SSH Agent request completed: host_id={} kind={} elapsed_ms={}",
+            plan.host_id,
+            kind,
+            elapsed.as_millis()
+        );
+    }
+    let disconnect = result
+        .as_ref()
+        .err()
+        .is_some_and(|error| request_error_requires_disconnect(error));
+    let _ = agent_request.response.send(result);
+    if disconnect {
+        return Err("ssh_agent_bridge_request_failed".to_string());
+    }
+    Ok(())
+}
+
+fn send_heartbeat_if_due(
+    writer: &mut impl Write,
+    reader_receiver: &Receiver<ReaderMessage>,
+    request_number: &mut u64,
+    last_heartbeat: &mut Instant,
+) -> Result<(), String> {
+    if last_heartbeat.elapsed() < HEARTBEAT_INTERVAL {
+        return Ok(());
+    }
+    let ping_id = format!("ping-{}", *request_number);
+    *request_number = request_number.saturating_add(1);
+    let sent_at = now_ms();
+    let pong = request(
+        writer,
+        reader_receiver,
+        ping_id,
+        "ping",
+        json!({ "sentAt": sent_at }),
+        "pong",
+        RESPONSE_TIMEOUT,
+    )?;
+    if pong.get("sentAt").and_then(Value::as_u64) != Some(sent_at) {
+        return Err("ssh_agent_bridge_heartbeat_invalid".to_string());
+    }
+    *last_heartbeat = Instant::now();
+    Ok(())
 }
 
 impl Drop for SshAgentBridgeManager {
@@ -1255,49 +1351,58 @@ fn run_bridge_once_inner(
         while !control.stop.load(Ordering::Acquire) {
             match request_receiver.try_recv() {
                 Ok(agent_request) => {
-                    let request_id = format!("agent-request-{request_number}");
-                    request_number = request_number.saturating_add(1);
-                    let kind = agent_request.kind.clone();
-                    let started_at = Instant::now();
-                    let result = request(
+                    handle_agent_request(
                         &mut writer,
                         &reader_receiver,
-                        request_id,
-                        &agent_request.kind,
-                        agent_request.payload,
-                        "response",
-                        response_timeout(&kind),
-                    );
-                    let elapsed = started_at.elapsed();
-                    if let Err(error) = &result {
-                        log::warn!(
-                            "SSH Agent request failed: host_id={} kind={} elapsed_ms={} error={}",
-                            plan.host_id,
-                            kind,
-                            elapsed.as_millis(),
-                            error
-                        );
-                    } else {
-                        log::debug!(
-                            "SSH Agent request completed: host_id={} kind={} elapsed_ms={}",
-                            plan.host_id,
-                            kind,
-                            elapsed.as_millis()
-                        );
-                    }
-                    let disconnect = result
-                        .as_ref()
-                        .err()
-                        .is_some_and(|error| request_error_requires_disconnect(error));
-                    let _ = agent_request.response.send(result);
-                    if disconnect {
-                        return Err("ssh_agent_bridge_request_failed".to_string());
-                    }
+                        plan,
+                        &mut request_number,
+                        agent_request,
+                    )?;
                     continue;
                 }
                 Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => {}
+                Err(TryRecvError::Disconnected) => return Ok(()),
             }
+
+            if lane.is_request_driven() {
+                match request_receiver.recv_timeout(REQUEST_QUEUE_WAIT) {
+                    Ok(agent_request) => handle_agent_request(
+                        &mut writer,
+                        &reader_receiver,
+                        plan,
+                        &mut request_number,
+                        agent_request,
+                    )?,
+                    Err(RecvTimeoutError::Timeout) => send_heartbeat_if_due(
+                        &mut writer,
+                        &reader_receiver,
+                        &mut request_number,
+                        &mut last_heartbeat,
+                    )?,
+                    Err(RecvTimeoutError::Disconnected) => return Ok(()),
+                }
+                continue;
+            }
+
+            let Some(_hook_poll_reservation) = control.try_reserve_idle_activity() else {
+                match request_receiver.recv_timeout(REQUEST_QUEUE_WAIT) {
+                    Ok(agent_request) => handle_agent_request(
+                        &mut writer,
+                        &reader_receiver,
+                        plan,
+                        &mut request_number,
+                        agent_request,
+                    )?,
+                    Err(RecvTimeoutError::Timeout) => send_heartbeat_if_due(
+                        &mut writer,
+                        &reader_receiver,
+                        &mut request_number,
+                        &mut last_heartbeat,
+                    )?,
+                    Err(RecvTimeoutError::Disconnected) => return Ok(()),
+                }
+                continue;
+            };
             let drain_id = format!("hook-drain-{request_number}");
             request_number = request_number.saturating_add(1);
             let payload = request(
@@ -1363,24 +1468,12 @@ fn run_bridge_once_inner(
                 }
                 cursor = latest;
             }
-            if last_heartbeat.elapsed() >= HEARTBEAT_INTERVAL {
-                let ping_id = format!("ping-{request_number}");
-                request_number = request_number.saturating_add(1);
-                let sent_at = now_ms();
-                let pong = request(
-                    &mut writer,
-                    &reader_receiver,
-                    ping_id,
-                    "ping",
-                    json!({ "sentAt": sent_at }),
-                    "pong",
-                    RESPONSE_TIMEOUT,
-                )?;
-                if pong.get("sentAt").and_then(Value::as_u64) != Some(sent_at) {
-                    return Err("ssh_agent_bridge_heartbeat_invalid".to_string());
-                }
-                last_heartbeat = Instant::now();
-            }
+            send_heartbeat_if_due(
+                &mut writer,
+                &reader_receiver,
+                &mut request_number,
+                &mut last_heartbeat,
+            )?;
         }
         Ok(())
     })();
@@ -1562,7 +1655,7 @@ mod tests {
     }
 
     #[test]
-    fn readonly_request_reuses_only_an_idle_matching_primary_bridge() {
+    fn readonly_request_reuses_only_a_request_ready_matching_primary_bridge() {
         let control = Arc::new(BridgeControl::new());
         control.connecting.store(false, Ordering::Release);
         control.connected.store(true, Ordering::Release);
@@ -1594,6 +1687,12 @@ mod tests {
         drop(reservation);
         assert_eq!(control.pending_requests.load(Ordering::Acquire), 0);
 
+        let hook_poll = control.try_reserve_idle_activity().unwrap();
+        assert!(manager
+            .try_reserve_primary("host-1", "identity-1", "files-2")
+            .is_none());
+        drop(hook_poll);
+
         let next = manager
             .try_reserve_primary("host-1", "identity-1", "files-2")
             .unwrap();
@@ -1609,6 +1708,9 @@ mod tests {
         assert_eq!(BridgeLane::for_request("historySync"), BridgeLane::Primary);
         assert_eq!(BridgeLane::for_request("fileList"), BridgeLane::Readonly);
         assert_eq!(BridgeLane::for_request("gitChanges"), BridgeLane::Git);
+        assert!(!BridgeLane::Primary.is_request_driven());
+        assert!(BridgeLane::Readonly.is_request_driven());
+        assert!(BridgeLane::Git.is_request_driven());
         assert!(response_timeout("historySync") > response_timeout("fileList"));
 
         let readonly = readonly_client_instance_id("host-1", "client-1");

@@ -645,3 +645,59 @@
 - `npx tsc --noEmit`：通过。
 - `npm run build`：通过。
 - `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+
+## SSH 远程目录浏览响应优化（2026-07-27）
+
+### 根因与发现清单
+
+- 根因位于桌面端 SSH bridge 调度边界：主 bridge 的 `hookDrain` 最长等待 2 秒，但旧调度只把外部 RPC 计入忙碌状态，文件请求会误判正在长轮询的主 bridge 为空闲并排在轮询之后；逐级目录 RPC 会把该等待重复叠加。修复落在 bridge 空闲槽与文件树请求消费层，而不是增加超时、重试或修改远端 Agent。
+- 已修改 `src-tauri/src/daemon/ssh_agent_bridge.rs`：Hook 长轮询完整占用主 bridge 空闲槽；只读文件请求仅复用真正空闲的主 bridge，否则进入独立只读 lane；只读与 Git lane 改为请求驱动并保留 heartbeat。
+- 已修改 `src/stores/fileExplorerStore.ts` 与 `src/lib/sshRemoteFiles.ts`：重复展开、紧凑目录链和路径定位复用已加载的 SSH children；关闭、切换和失败路径释放远程 consumer，并用请求序号及同 consumer 释放队列隔离快速切换竞态。
+- 已复核但未修改 `commands/ssh_files.rs` 的文件 RPC、`commands/history.rs::history_remote_close` 的 consumer 释放入口、文件浏览组件调用方、远端 Agent `files.rs`/`protocol.rs`、协议版本和已发布 Agent 二进制。
+- GitNexus 本地 runner 因缺少 `tree-sitter-kotlin` 无法刷新；按规则降级到 SSH 契约、codebase-memory、`rg`、源码和测试。完成后已重建 moderate 索引，并以 `HEAD` 为基线确认工作区只涉及预期的 5 个文件。
+
+### 场景覆盖
+
+- 主 bridge 正在 Hook 长轮询、外部请求已占用、连接中或真正空闲时，文件请求分别隔离、隔离、隔离或复用；文件请求不再进入已开始的 Hook 轮询队列。
+- 独立只读和 Git lane 在有请求时立即处理，无请求时仅维持 heartbeat，不消费与其身份无关的 Hook spool；Git 串行读写语义保持不变。
+- SSH 目录首次展开仍请求远端；折叠后重开、紧凑单目录链和终端路径定位复用已经加载的 children；显式刷新仍重新读取远端，避免缓存掩盖文件变化。
+- 同项目重开、跨项目快速切换、加载中关闭和加载失败均不会让旧异步结果覆盖新项目，也不会让同 consumer 的延迟释放误关新 bridge。
+- 本地文件项目、WSL、窗口焦点、分屏、托盘和 Worktree 不经过该 SSH 文件 bridge 调度；本次行为保持不变。
+
+### 验证结果
+
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml daemon::ssh_agent_bridge::tests`：21 项通过、0 项失败。
+- `npx tsc --noEmit`：通过。
+- `npm run build`：通过，Vite 完成 6696 个模块转换。
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`：通过。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+- 全量 Rust 测试结果为 737 项通过、1 项忽略、1 项失败；失败的既有 `commands::hook_settings::tests::install_then_uninstall_pi_extension` 已单独复现，断言发生在未修改的 Pi Hook 卸载状态，与本次 SSH bridge 和文件树改动无调用关系。
+- 尚未连接真实远端目录做交互延迟对比，也未生成安装包；该项留给安装包或开发模式下的实际 SSH 冒烟测试。
+
+## Windows 桌宠首次显示任务栏缩略图修复（2026-07-27）
+
+### 根因与发现清单
+
+- 根因位于 Tauri 隐藏窗口首次显示与 Windows Explorer 任务栏登记的生命周期边界：桌宠虽然在静态窗口配置中设置了 `skipTaskbar`，但部分 Windows 11 环境会在后续 `show()` 时重新登记窗口；旧显示链路没有再次应用跳过任务栏属性，因此冷启动可出现缩略图，而关闭后重开又会自愈。
+- 修复落在唯一的桌宠显示入口 `desktop_pet_window_sync`：Windows 下每次 `show()` 成功后幂等调用 `set_skip_taskbar(true)`，不通过延时、窗口样式覆写或前端重试掩盖竞态。
+- 已修改 `src-tauri/src/commands/desktop_pet.rs`、`CHANGELOG.md` 与本验证记录。
+- 已确认无需修改桌宠 React 渲染、窗口尺寸与位置、置顶策略、托盘逻辑、PTY daemon，以及 macOS/Linux 窗口行为。
+- GitNexus CLI 未建立本仓库索引，按规则降级到 codebase-memory 调用图、`rg` 与源码复核；IPC 命令没有静态 Rust 调用方，实际入口为 `useDesktopPetCoordinator` 的 Tauri invoke，影响范围限定为桌宠窗口同步路径，风险为低。
+
+### 场景覆盖
+
+- 冷启动启用桌宠、设置中关闭后重新启用、托盘运行后重新显示，均经过同一窗口同步入口并重新应用跳过任务栏属性。
+- 窗口置顶开关、保存位置与大小调整仍在显示前完成，不改变现有行为；主窗口任务栏入口不受影响。
+- `Alt+Tab` 与任务栏都依赖 Windows 原生窗口属性；本次只重新声明已有配置，不创建第二个窗口，也不改变窗口 owner。
+- macOS/Linux 由编译条件保持原显示路径；窗口焦点、分屏、WSL、Worktree 与 Hook 安装状态均不参与该属性同步。
+
+### 验证结果
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`：通过。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml commands::desktop_pet::tests`：13 项通过、0 项失败。
+- `cargo check --locked --manifest-path src-tauri/Cargo.toml`：通过。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+- GitNexus `detect-changes` 因本地没有该仓库索引而不可用；降级刷新 codebase-memory moderate 索引并执行工作区变更检测，确认仅涉及 `desktop_pet_window_sync` 及预期的 CHANGELOG、验证记录。
+- `npm run tauri:build:local -- --bundles nsis`：通过，仅构建 NSIS；安装包为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`，大小 17,093,981 字节，SHA-256 为 `51956099BB6246982D1FE7E64A4B9C321A0AF795E24BB5332D1306A654B037C0`。
+- 自动化验证无法直接断言 Windows Explorer 的任务栏缩略图状态，冷启动、关闭后重开及任务栏/Alt+Tab 表现需用本安装包在受影响的 Windows 11 机器上冒烟确认。
