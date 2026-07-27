@@ -189,6 +189,11 @@ export function useDesktopPetCoordinator({
       handedOff: t("desktopPet.actions.handedOff"),
       handoffRecoveryFailed: t("desktopPet.actions.handoffRecoveryFailed"),
       noHandoffSessions: t("desktopPet.actions.noHandoffSessions"),
+      handoffReady: t("desktopPet.actions.handoffReady"),
+      handoffResolveRemoteSession: t("desktopPet.actions.handoffResolveRemoteSession"),
+      handoffTaskRunning: t("desktopPet.actions.handoffTaskRunning"),
+      handoffStateUnknown: t("desktopPet.actions.handoffStateUnknown"),
+      handoffUnavailable: t("desktopPet.actions.handoffUnavailable"),
     },
   }), [desktopPet, language, petWindowVisible, t]);
 

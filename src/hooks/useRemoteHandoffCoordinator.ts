@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { flushTerminalSnapshotsNow } from "../lib/sessionSnapshotPersistence";
@@ -13,7 +14,8 @@ import {
   type CcConnectHandoffStatus,
 } from "../lib/remoteHandoff";
 import { findWorktreeForSession } from "../lib/terminalProject";
-import type { RemoteHandoffSessionState } from "../lib/types";
+import { selectUniqueSshCodexSessionBinding } from "../lib/sshCodexSessionBinding";
+import type { Project, RemoteHandoffSessionState, TerminalSession } from "../lib/types";
 import { useI18n, type TranslationKey } from "../lib/i18n";
 import { logWarn } from "../lib/logger";
 import { useProjectStore } from "../stores/projectStore";
@@ -21,6 +23,7 @@ import { useRemoteHandoffStore } from "../stores/remoteHandoffStore";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useWorktreeStore } from "../stores/worktreeStore";
 import { useSshHostStore } from "../stores/sshHostStore";
+import { fetchRemoteProjectSessionSummaries } from "../stores/historyStore";
 
 const HANDOFF_STATUS_POLL_MS = 2000;
 
@@ -55,7 +58,68 @@ const ERROR_TRANSLATIONS: Array<[string, TranslationKey]> = [
   ["remote_handoff_ssh_project_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
   ["remote_handoff_ssh_host_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
   ["remote_handoff_ssh_path_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
+  ["ssh_agent_not_installed", "remoteHandoff.error.sshAgentRequired"],
+  ["remote_handoff_ssh_session_not_found", "remoteHandoff.error.remoteSessionNotFound"],
+  ["remote_handoff_ssh_session_ambiguous", "remoteHandoff.error.remoteSessionAmbiguous"],
+  ["remote_handoff_terminal_start_missing", "remoteHandoff.error.terminalStartMissing"],
+  ["remote_handoff_session_identity_changed", "remoteHandoff.error.sessionIdentityChanged"],
 ];
+
+interface DaemonSessionIdentity {
+  sessionId: string;
+  createdAtMs?: number;
+}
+
+async function resolveSshHandoffSessionIdentity(
+  session: TerminalSession,
+  project: Project,
+): Promise<TerminalSession> {
+  let terminalStartedAtMs = session.createdAtMs ?? 0;
+  if (!Number.isFinite(terminalStartedAtMs) || terminalStartedAtMs <= 0) {
+    const daemonSession = (await invoke<DaemonSessionIdentity[]>("pty_daemon_sessions"))
+      .find((candidate) => candidate.sessionId === session.id);
+    terminalStartedAtMs = daemonSession?.createdAtMs ?? 0;
+  }
+  if (!Number.isFinite(terminalStartedAtMs) || terminalStartedAtMs <= 0) {
+    throw new Error("remote_handoff_terminal_start_missing");
+  }
+
+  const { context, summaries } = await fetchRemoteProjectSessionSummaries(project);
+  const terminalState = useTerminalStore.getState();
+  const alreadyBoundSessionIds = new Set(
+    terminalState.sessions
+      .filter((candidate) => candidate.id !== session.id)
+      .map((candidate) => candidate.cliSessionId?.trim())
+      .filter((sessionId): sessionId is string => Boolean(sessionId)),
+  );
+  const selection = selectUniqueSshCodexSessionBinding({
+    summaries,
+    terminalStartedAtMs,
+    terminalActivityAtMs: terminalState.ptyOutputActivityAt[session.id] ?? 0,
+    nowMs: Date.now(),
+    alreadyBoundSessionIds,
+  });
+  if (selection.status === "not_found") {
+    throw new Error("remote_handoff_ssh_session_not_found");
+  }
+  if (selection.status === "ambiguous") {
+    throw new Error("remote_handoff_ssh_session_ambiguous");
+  }
+
+  const bound = await useTerminalStore.getState().bindRemoteCliSessionIdentity(
+    session.id,
+    selection.sessionId,
+    selection.sourceInstanceId || context.sourceInstanceId,
+  );
+  const resolved = useTerminalStore
+    .getState()
+    .sessions
+    .find((candidate) => candidate.id === session.id);
+  if (!bound || resolved?.cliSessionId !== selection.sessionId) {
+    throw new Error("remote_handoff_session_identity_changed");
+  }
+  return resolved;
+}
 
 function handoffErrorMessage(
   error: unknown,
@@ -142,15 +206,16 @@ export function useRemoteHandoffCoordinator(appReady: boolean) {
     remoteStore.setBusy(true);
     try {
       const terminal = useTerminalStore.getState();
-      const session = terminal.sessions.find((item) => item.id === sessionId);
+      let session = terminal.sessions.find((item) => item.id === sessionId);
       if (!session) {
         toast.error(t("remoteHandoff.toast.startFailed"), {
           description: t("remoteHandoff.error.sessionMissing"),
         });
         return;
       }
-      const project = session.projectId
-        ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
+      const sessionProjectId = session.projectId;
+      const project = sessionProjectId
+        ? useProjectStore.getState().projects.find((item) => item.id === sessionProjectId)
         : undefined;
       const worktree = findWorktreeForSession(
         session,
@@ -171,7 +236,7 @@ export function useRemoteHandoffCoordinator(appReady: boolean) {
       const sshHost = project?.ssh_host_id
         ? useSshHostStore.getState().hosts.find((host) => host.id === project.ssh_host_id)
         : undefined;
-      const eligibility = getRemoteHandoffEligibility({
+      let eligibility = getRemoteHandoffEligibility({
         session,
         project,
         sshHost,
@@ -180,6 +245,31 @@ export function useRemoteHandoffCoordinator(appReady: boolean) {
         processStatus: terminal.sessionStatuses[session.id],
         activeHandoff: useRemoteHandoffStore.getState().status.info,
       });
+      if (
+        !eligibility.eligible
+        && eligibility.reason === "missing_cli_session_id"
+        && project?.environment_type === "ssh"
+      ) {
+        try {
+          session = await resolveSshHandoffSessionIdentity(session, project);
+          const currentTerminal = useTerminalStore.getState();
+          eligibility = getRemoteHandoffEligibility({
+            session,
+            project,
+            sshHost,
+            worktree,
+            notification: currentTerminal.tabNotifications[session.id] ?? "none",
+            processStatus: currentTerminal.sessionStatuses[session.id],
+            activeHandoff: useRemoteHandoffStore.getState().status.info,
+          });
+        } catch (error) {
+          logWarn("Failed to resolve SSH Codex session identity for remote handoff", error);
+          toast.error(t("remoteHandoff.toast.startFailed"), {
+            description: handoffErrorMessage(error, t),
+          });
+          return;
+        }
+      }
       const workDir = getRemoteHandoffWorkDir(session, project);
       if (!eligibility.eligible || !project || !session.cliSessionId || !workDir) {
         toast.warning(t("remoteHandoff.toast.unavailable"), {

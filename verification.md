@@ -1,3 +1,32 @@
+# 桌宠 Agent 状态与 SSH 托管身份修复验证（2026-07-27）
+
+## 根因与发现清单
+
+- 根因位于终端运行态与 Agent 回合态的聚合边界：`codex` 及其 SSH 进程会跨多个回合长期存活，Shell OSC 和 PTY 重绘只能证明进程/终端有活动，不能证明当前 Agent 回合仍在执行；修复因此落在 `terminalStore` 状态生产与桌宠状态聚合层，由 Hook/daemon 回合事件保持权威，PTY 输出只允许短暂补充空状态。
+- SSH 托管不可选的另一根因位于终端身份绑定边界：远端 Hook 未回传 `cliSessionId` 时，桌宠直接过滤了该会话，后端代理没有机会接收原远端线程 ID；修复保留可恢复候选，并通过已登记 SSH Agent 的远端历史做唯一、限时、非空、SSH Codex 且排除其他打开终端已占用 ID 的匹配，零匹配或多匹配均拒绝。
+- 状态触点已覆盖：`handleShellRuntimeEvent`、`handleCliHookEvent`、PTY 输出活动、daemon 状态、桌宠快照与传输指纹；终端创建、分屏、恢复及 daemon attach 均保留 PTY 创建时间。
+- 托管触点已覆盖：资格判断、远端历史同步、唯一身份选择、Zustand 绑定与持久化、桌宠平台/会话二级菜单、中英文状态与错误提示。
+- 确认无须修改：cc-connect 源码及全局安装、Rust Codex proxy、托管启动/取消协议、SSH 凭据和 Provider 注入链；现有后端仍只接收经过前端严格绑定的原 `cliSessionId`。
+- 场景复核：本地 Agent 仍要求可信停止态；SSH 无 Hook 空闲态可尝试唯一识别；已知 `running`/`attention`、WSL、SSH Worktree、交互认证、缺失 Host 均继续拒绝；多终端通过已占用 ID 和歧义检测防串线。窗口焦点、分屏位置、最小化/托盘不参与身份选择。
+- codebase-memory 已用 `moderate` 模式刷新，抽查确认新状态解析入口只由桌宠快照调用，新 SSH 身份解析只由托管协调器调用；`terminalStore` 与远端历史/托管主流程仍属于 HIGH 风险调用面，因此采用失败关闭和独立回归测试。
+
+## 验证结果
+
+- `node scripts/desktopPetStatus.test.mjs`：3 项通过，覆盖完成/失败/审批状态不被后续 PTY 输出重开，以及空状态活动提示过期。
+- `node scripts/sshCodexSessionBinding.test.mjs`：3 项通过，覆盖唯一匹配、旧/空/本地/已占用会话拒绝及多匹配歧义拒绝。
+- `node scripts/remoteHandoff.test.mjs`：4 项通过，覆盖缺失 ID 时先阻止运行态、SSH 空闲态进入身份恢复及原资格矩阵。
+- `node scripts/desktopPetTransport.test.mjs`：4 项通过，桌宠可见托管状态纳入传输指纹。
+- `.\node_modules\.bin\tsc.cmd --noEmit`、`npm run build`、`cargo fmt --check --manifest-path src-tauri/Cargo.toml`、`cargo check --locked --manifest-path src-tauri/Cargo.toml`：通过。
+- `cargo test --locked --manifest-path src-tauri/ssh-agent/Cargo.toml`：70 项通过；仅有未修改测试模块的既有 unused-import 警告。
+- `npm run tauri:build:local -- --bundles nsis`：通过，仅生成 NSIS；安装包为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`，17,507,085 字节，SHA-256 `47E083C61DBF6DDE3F45C0AA7815A60DC625E67AAA9428C34568F328073122A5`。
+
+## 未覆盖与测试边界
+
+- 当前未连接可用于自动化的真实 SSH Codex 主机和消息平台账号，因此远端历史唯一识别、托管对话及取消恢复仍需使用安装包做一次真实链路冒烟。
+- 未启动桌面窗口手动切换中英文；新增键已由 `zh-CN`/`en-US` 类型约束和生产构建覆盖。
+
+---
+
 # SSH Codex 会话远程托管验证（2026-07-27）
 
 ## 根因与发现清单

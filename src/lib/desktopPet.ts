@@ -24,6 +24,7 @@ import type {
 import type { DesktopPetSettings, LanguagePreference } from "../stores/settingsStore";
 import { shouldIncludeAgentTerminal } from "./agentTerminal";
 import { desktopPetScaleFromPercent } from "./desktopPetSize";
+import { resolveDesktopPetOpenSessionStatus } from "./desktopPetStatus";
 
 export {
   calculateDesktopPetMenuWindowGeometry,
@@ -133,7 +134,10 @@ export interface DesktopPetTarget {
   status: TabNotificationState;
   active: boolean;
   updatedAt: number;
+  handoffCandidate: boolean;
   handoffEligible: boolean;
+  handoffRecoverable: boolean;
+  handoffReason: import("./remoteHandoff").RemoteHandoffEligibilityReason | null;
   handedOff: boolean;
   handoffPhase: RemoteHandoffPhase | null;
 }
@@ -193,6 +197,11 @@ export interface DesktopPetConfigPayload {
     handedOff: string;
     handoffRecoveryFailed: string;
     noHandoffSessions: string;
+    handoffReady: string;
+    handoffResolveRemoteSession: string;
+    handoffTaskRunning: string;
+    handoffStateUnknown: string;
+    handoffUnavailable: string;
   };
 }
 
@@ -210,8 +219,7 @@ export interface DesktopPetOpenTargetPayload {
   daemonOnly: boolean;
 }
 
-export const DESKTOP_PET_OUTPUT_ACTIVITY_TTL_MS = 6000;
-const DESKTOP_PET_OUTPUT_ACTIVITY_FINAL_GRACE_MS = 1200;
+export { DESKTOP_PET_OUTPUT_ACTIVITY_TTL_MS } from "./desktopPetStatus";
 
 const STATUS_PRIORITY: Record<TabNotificationState, number> = {
   none: 0,
@@ -227,12 +235,6 @@ function moodFromStatus(status: TabNotificationState): DesktopPetMood {
   if (status === "done") return "success";
   if (status === "failed") return "error";
   return "idle";
-}
-
-function timestampFromDetails(details: TabStatusDetails | undefined): number {
-  if (!details?.updatedAt) return 0;
-  const parsed = Date.parse(details.updatedAt);
-  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function daemonTaskStatus(task: BackgroundPetTask): TabNotificationState {
@@ -258,34 +260,6 @@ function explicitDaemonTaskStatus(task: BackgroundPetTask | undefined): TabNotif
     return task.taskStatus;
   }
   return null;
-}
-
-function resolveOpenSessionStatus(
-  sessionId: string,
-  tabNotifications: Record<string, TabNotificationState>,
-  tabStatusDetails: Record<string, TabStatusDetails>,
-  daemonTask: BackgroundPetTask | undefined,
-  outputActivityAt: number,
-  now: number
-): { status: TabNotificationState; updatedAt: number } {
-  const frontendStatus = tabNotifications[sessionId] ?? "none";
-  const frontendUpdatedAt = timestampFromDetails(tabStatusDetails[sessionId]);
-  const daemonStatus = explicitDaemonTaskStatus(daemonTask);
-  const daemonUpdatedAt = daemonTask?.taskUpdatedAtMs ?? daemonTask?.createdAtMs ?? 0;
-
-  const resolved = daemonStatus && (frontendUpdatedAt === 0 || daemonUpdatedAt >= frontendUpdatedAt)
-    ? { status: daemonStatus, updatedAt: daemonUpdatedAt }
-    : { status: frontendStatus, updatedAt: frontendUpdatedAt };
-  const recentOutput = outputActivityAt > 0
-    && now >= outputActivityAt
-    && now - outputActivityAt <= DESKTOP_PET_OUTPUT_ACTIVITY_TTL_MS;
-  const activityCanOverride = resolved.status === "none"
-    || ((resolved.status === "done" || resolved.status === "failed")
-      && outputActivityAt >= resolved.updatedAt + DESKTOP_PET_OUTPUT_ACTIVITY_FINAL_GRACE_MS);
-  if (recentOutput && activityCanOverride) {
-    return { status: "running", updatedAt: outputActivityAt };
-  }
-  return resolved;
 }
 
 interface DeriveDesktopPetSnapshotInput {
@@ -371,14 +345,13 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
     )
   ));
   const candidates: DesktopPetTarget[] = openPtySessions.map((session) => {
-    const { status, updatedAt } = resolveOpenSessionStatus(
-      session.id,
-      input.tabNotifications,
-      input.tabStatusDetails,
-      backgroundById.get(session.id),
-      input.ptyOutputActivityAt[session.id] ?? 0,
-      now
-    );
+    const { status, updatedAt } = resolveDesktopPetOpenSessionStatus({
+      frontendStatus: input.tabNotifications[session.id] ?? "none",
+      frontendDetails: input.tabStatusDetails[session.id],
+      daemonTask: backgroundById.get(session.id),
+      outputActivityAt: input.ptyOutputActivityAt[session.id] ?? 0,
+      now,
+    });
     const project = session.projectId ? projectById.get(session.projectId) : undefined;
     const handoffPhase = session.remoteHandoff?.phase
       ?? (input.activeHandoff?.localSessionId === session.id ? "active" : null);
@@ -392,6 +365,11 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
       processStatus: input.sessionStatuses[session.id],
       activeHandoff: input.activeHandoff,
     });
+    const handoffCandidate = eligibility.reason !== "codex_only"
+      && eligibility.reason !== "missing_project"
+      && eligibility.reason !== "unsupported_session";
+    const handoffRecoverable = project?.environment_type === "ssh"
+      && eligibility.reason === "missing_cli_session_id";
     return {
       sessionId: session.id,
       daemonOnly: false,
@@ -400,7 +378,10 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
       sessionTitle: session.title || null,
       projectName: project?.name ?? null,
       active: session.id === input.activeSessionId,
+      handoffCandidate,
       handoffEligible: eligibility.eligible,
+      handoffRecoverable,
+      handoffReason: eligibility.reason,
       handedOff,
       handoffPhase,
     };
@@ -418,7 +399,10 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
       sessionTitle: persisted?.title || task.cwd || null,
       projectName: project?.name ?? null,
       active: false,
+      handoffCandidate: false,
       handoffEligible: false,
+      handoffRecoverable: false,
+      handoffReason: "unsupported_session",
       handedOff: false,
       handoffPhase: null,
     });
@@ -435,7 +419,10 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
       sessionTitle: null,
       projectName: input.activeHandoff.projectName,
       active: false,
+      handoffCandidate: true,
       handoffEligible: false,
+      handoffRecoverable: false,
+      handoffReason: "already_handed_off",
       handedOff: true,
       handoffPhase: "active",
     });

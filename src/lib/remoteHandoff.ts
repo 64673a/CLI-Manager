@@ -72,7 +72,7 @@ export interface RemoteHandoffEligibility {
   reason: RemoteHandoffEligibilityReason | null;
 }
 
-function isCodexSession(session: TerminalSession, project: Project | undefined): boolean {
+export function isCodexSession(session: TerminalSession, project: Project | undefined): boolean {
   const configured = project?.cli_tool.trim().toLowerCase() ?? "";
   if (configured === "codex" || configured.includes("codex")) return true;
   return /(?:^|\s)codex(?:\.(?:cmd|exe|ps1))?(?:\s|$)/i.test(session.startupCmd?.trim() ?? "");
@@ -103,10 +103,6 @@ export function getRemoteHandoffEligibility(input: {
   if ((session.kind ?? "pty") !== "pty") return { eligible: false, reason: "unsupported_session" };
   if (!project) return { eligible: false, reason: "missing_project" };
   if (!isCodexSession(session, project)) return { eligible: false, reason: "codex_only" };
-  const cliSessionId = session.cliSessionId?.trim();
-  if (!cliSessionId || /\s/.test(cliSessionId)) {
-    return { eligible: false, reason: "missing_cli_session_id" };
-  }
   if (project.environment_type === "wsl") {
     return { eligible: false, reason: "path_unsupported" };
   }
@@ -138,6 +134,10 @@ export function getRemoteHandoffEligibility(input: {
     && project.environment_type !== "ssh"
   ) {
     return { eligible: false, reason: "task_state_unknown" };
+  }
+  const cliSessionId = session.cliSessionId?.trim();
+  if (!cliSessionId || /\s/.test(cliSessionId)) {
+    return { eligible: false, reason: "missing_cli_session_id" };
   }
   return { eligible: true, reason: null };
 }

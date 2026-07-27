@@ -278,6 +278,11 @@ interface TerminalStore {
   updateSessionRemoteHandoff: (sessionId: string, handoff: RemoteHandoffSessionState) => Promise<void>;
   resumeSessionFromRemoteHandoff: (sessionId: string) => Promise<string>;
   restorePersistedRemoteHandoffSessions: () => void;
+  bindRemoteCliSessionIdentity: (
+    sessionId: string,
+    cliSessionId: string,
+    remoteHistorySourceInstanceId?: string,
+  ) => Promise<boolean>;
   recordPtyOutputActivity: (sessionId: string) => void;
   markAttentionInputHandled: (sessionId: string) => void;
   handleCliHookEvent: (payload: CliHookPayload) => string | null;
@@ -325,11 +330,12 @@ interface TerminalStore {
 let restoreInProgress = false;
 let sshSessionPersistenceQueue = Promise.resolve();
 
-function queueSshSessionPersistence(sessions: TerminalSession[]): void {
+function queueSshSessionPersistence(sessions: TerminalSession[]): Promise<void> {
   const snapshot = sessions.map((session) => ({ ...session }));
   sshSessionPersistenceQueue = sshSessionPersistenceQueue
     .catch(() => {})
     .then(() => useSessionStore.getState().saveSessions(snapshot));
+  return sshSessionPersistenceQueue;
 }
 
 function basenameFromPath(path: string | null | undefined): string | null {
@@ -1771,6 +1777,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const replacement: TerminalSession = {
       ...lockedSession,
       id: newSessionId,
+      createdAtMs: Date.now(),
       shell: launch.shell,
       environmentType: launch.environmentType ?? lockedSession.environmentType,
       sshHostId: launch.sshHostId ?? lockedSession.sshHostId,
@@ -1885,6 +1892,37 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     set({ sessions, ...mirror, sessionStatuses });
   },
 
+  bindRemoteCliSessionIdentity: async (
+    sessionId,
+    cliSessionId,
+    remoteHistorySourceInstanceId,
+  ) => {
+    const normalizedId = cliSessionId.trim();
+    if (!normalizedId || /\s/.test(normalizedId)) return false;
+    const state = get();
+    const current = state.sessions.find((session) => session.id === sessionId);
+    if (!current || current.environmentType !== "ssh") return false;
+    if (current.cliSessionId && current.cliSessionId !== normalizedId) return false;
+    if (state.sessions.some((session) => (
+      session.id !== sessionId && session.cliSessionId?.trim() === normalizedId
+    ))) return false;
+    const normalizedSourceInstanceId = remoteHistorySourceInstanceId?.trim() || undefined;
+    const sessions = get().sessions.map((session) => (
+      session.id === sessionId
+        ? {
+            ...session,
+            cliSessionId: normalizedId,
+            ...(normalizedSourceInstanceId
+              ? { remoteHistorySourceInstanceId: normalizedSourceInstanceId }
+              : {}),
+          }
+        : session
+    ));
+    set({ sessions });
+    await queueSshSessionPersistence(sessions);
+    return true;
+  },
+
   recordPtyOutputActivity: (sessionId) => {
     const now = Date.now();
     const previous = get().ptyOutputActivityAt[sessionId] ?? 0;
@@ -1899,6 +1937,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
   createSession: async (projectId, cwd, title, startupCmd, envVars, shell, paneId, worktreeId, sshHostId, cliSessionId, remoteHistoryConsumerId, remoteHistorySourceInstanceId) => {
     const os = await getOsPlatform();
+    const createdAtMs = Date.now();
     let launch: ResolvedPtyLaunch;
     let sessionId: string;
     try {
@@ -1927,6 +1966,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const launchStartupCmd = launch.startupCmd;
     const session: TerminalSession = {
       id: sessionId,
+      createdAtMs,
       projectId,
       worktreeId,
       title: title ?? "Terminal",
@@ -2298,6 +2338,15 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           };
         }),
       }));
+      const boundSession = get().sessions.find((session) => session.id === tabId);
+      if (boundSession?.environmentType === "ssh") {
+        void queueSshSessionPersistence(get().sessions).catch((error) => {
+          logWarn("Failed to persist SSH CLI session identity", {
+            sessionId: tabId,
+            error,
+          });
+        });
+      }
     }
     const updatedAt = payload.timestamp ?? new Date().toISOString();
     const status = mapCliHookEvent(payload.event);
@@ -2326,10 +2375,15 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     }
     set((state) => {
       const next = buildTabStatusUpdate(state, tabId, "hook", status, updatedAt);
-      if (status !== "done" && status !== "failed") return next;
+      const terminalOutputStopped = status === "done" || status === "failed";
+      const ptyOutputActivityAt = terminalOutputStopped
+        ? { ...state.ptyOutputActivityAt }
+        : null;
+      if (ptyOutputActivityAt) delete ptyOutputActivityAt[tabId];
+      if (!terminalOutputStopped) return next;
 
       const tabStatus = next.tabStatuses[tabId];
-      if (!tabStatus?.shell) return next;
+      if (!tabStatus?.shell) return { ...next, ptyOutputActivityAt: ptyOutputActivityAt! };
       const resolved: TabStatusSources = { ...tabStatus };
       delete resolved.shell;
       delete resolved.shellUpdatedAt;
@@ -2337,6 +2391,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         tabStatuses: { ...next.tabStatuses, [tabId]: resolved },
         tabNotifications: { ...next.tabNotifications, [tabId]: getTabStatusEntry(resolved) },
         tabStatusDetails: { ...next.tabStatusDetails, [tabId]: getTabStatusDetails(resolved) },
+        ptyOutputActivityAt: ptyOutputActivityAt!,
       };
     });
     return tabId;
@@ -2346,6 +2401,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const tabId = resolvePrimaryTabId(payload.sessionId, get().splits);
     const session = get().sessions.find((item) => item.id === tabId);
     if (!session || !isShellRuntimeMonitoringEnabled()) return null;
+    const project = session.projectId
+      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
+      : undefined;
+    // Agent processes such as Codex and SSH stay alive across many turns. Their
+    // shell lifecycle cannot represent turn state; Hook events are authoritative.
+    if (resolveAgentTerminalMetadata(session, project).isAgentSession) return null;
     // 回车猜测只对 cmd 生效：cmd 无法注入 C 序列，输入侧猜测是它唯一的
     // command_started 信号；其余 shell 由 OSC 133/633/777 驱动，猜测只会误判
     // （多行输入、TUI 内回车、历史命令均不可靠）。
@@ -2494,6 +2555,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
     const splitSession: TerminalSession = {
       id: splitSessionId,
+      createdAtMs: Date.now(),
       projectId: options?.projectId,
       worktreeId: options?.worktreeId,
       title: createSplitSessionTitle(options),
@@ -2910,6 +2972,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
             const attachedMeta = resolveAttachedDaemonSession(ps, daemonSession);
             const attachedSession: TerminalSession = {
               id: ps.id,
+              createdAtMs: daemonSession.createdAtMs ?? ps.createdAtMs,
               projectId: attachedMeta.projectId,
               worktreeId: attachedMeta.worktreeId,
               title: attachedMeta.title,
@@ -3037,6 +3100,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       const hasInitialOutput = !!initialTerminalOutput;
       const restoredSession: TerminalSession = {
         id: newSessionId,
+        createdAtMs: Date.now(),
         projectId: ps.projectId,
         worktreeId: ps.worktreeId,
         title: ps.title,
@@ -3182,6 +3246,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     const attachedMeta = resolveAttachedDaemonSession(persisted, daemonSession);
     const session: TerminalSession = {
       id: sessionId,
+      createdAtMs: daemonSession.createdAtMs ?? persisted?.createdAtMs,
       projectId: attachedMeta.projectId,
       worktreeId: attachedMeta.worktreeId,
       title: attachedMeta.title,

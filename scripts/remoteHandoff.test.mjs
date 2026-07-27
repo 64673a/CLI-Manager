@@ -77,6 +77,16 @@ test("SSH sessions still reject known running states before backend preflight", 
       reason: "task_running",
     });
   }
+  assert.deepEqual(eligibility({
+    session: { ...baseSession, cliSessionId: undefined },
+    notification: "running",
+    processStatus: "running",
+  }), { eligible: false, reason: "task_running" });
+  assert.deepEqual(eligibility({
+    session: { ...baseSession, cliSessionId: undefined },
+    notification: "none",
+    processStatus: "running",
+  }), { eligible: false, reason: "missing_cli_session_id" });
 });
 
 test("SSH handoff fails closed for missing hosts, interactive auth, and Worktrees", () => {

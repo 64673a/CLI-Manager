@@ -212,6 +212,9 @@ attention > failed > running > done > none
 
 Hook-driven `attention` must win over shell runtime state until the user activates the tab and clears the hook source.
 
+- A terminal classified as an Agent terminal (`isAgentSession=true`) must use Agent Hook/daemon lifecycle events as the authoritative turn state. The long-lived `codex`, `claude`, or SSH process is not a turn, so shell runtime events for that terminal must not update the Agent task state.
+- PTY output is only a short activity hint when no Hook/daemon lifecycle state exists. It may promote `none` to `running`, but it must never overwrite explicit `running`, `attention`, `done`, or `failed`; `Stop`/`StopFailure` clears the stale output hint.
+
 ### 4. Validation & Error Matrix
 
 | Condition | Required behavior |
@@ -231,6 +234,8 @@ Hook-driven `attention` must win over shell runtime state until the user activat
 | Unknown event name | Ignore the marker and do not update status. |
 | Invalid or missing `exit` on `command_finished` | Treat as failure only when the parsed number is finite and non-zero; otherwise do not invent success. |
 | Hook and shell state conflict | Resolve by priority, never by last-write-wins alone. |
+| Agent terminal emits shell start/prompt markers while its CLI process remains alive | Ignore shell runtime markers for Agent task state; wait for Hook/daemon turn lifecycle events. |
+| PTY repaint arrives after an Agent `Stop`/`StopFailure` | Keep the explicit final state; repaint output must not reopen the turn. |
 
 ### 5. Good/Base/Bad Cases
 
