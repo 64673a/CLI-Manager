@@ -1616,3 +1616,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 设置页侧边导航小屏滚动
+
+**Date**: 2026-07-27
+**Task**: 设置页侧边导航小屏滚动
+**Branch**: `master`
+
+### Summary
+
+修复设置页侧边菜单在小高度窗口中无法滚动的问题，为导航列表增加自适应纵向滚动，并同步 V1.3.2 更新日志与功能清单；TypeScript 和 diff 检查通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4dfd429b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
