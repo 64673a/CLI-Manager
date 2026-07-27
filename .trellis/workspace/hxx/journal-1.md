@@ -1583,3 +1583,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Codex/Claude 提问通知 Hook
+
+**Date**: 2026-07-27
+**Task**: Codex/Claude 提问通知 Hook
+**Branch**: `master`
+
+### Summary
+
+为 Codex request_user_input 与 Claude AskUserQuestion 增加专用通知 Hook，补齐本地、WSL、cc-switch、SSH Agent、信任状态和双语通知；修复 Codex TOML 等价信任键重复导致的状态刷新失败。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dbba47ae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
