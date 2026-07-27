@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChangeKey, parseDiff, tokenize } from "react-diff-view";
 import type { ChangeData } from "react-diff-view";
 import { toast } from "sonner";
@@ -12,11 +12,13 @@ import type {
   GitDiffTarget,
   ParsedGitDiff,
 } from "./types";
+import type { GitDiffHunkPlacement } from "./reviewNavigation";
 
 interface UseGitDiffControllerOptions {
   target: GitDiffTarget;
   dataSource: GitDiffDataSource;
   onReverted?: () => void;
+  initialHunkPlacement?: GitDiffHunkPlacement;
 }
 
 function parseGitDiff(diffText: string, fileName: string): ParsedGitDiff | null {
@@ -63,6 +65,7 @@ export function useGitDiffController({
   target,
   dataSource,
   onReverted,
+  initialHunkPlacement = "first",
 }: UseGitDiffControllerOptions): GitDiffController {
   const { t } = useI18n();
   const [diffText, setDiffText] = useState("");
@@ -70,7 +73,10 @@ export function useGitDiffController({
   const [reverting, setReverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [activeHunkIndex, setActiveHunkIndex] = useState(0);
+  const [loadRevision, setLoadRevision] = useState(0);
   const [payloadAllowsPartialRevert, setPayloadAllowsPartialRevert] = useState(false);
+  const hunkAnchorsRef = useRef(new Map<number, HTMLElement>());
   const snapshotContent = dataSource.kind === "snapshot" ? dataSource.content : undefined;
   const liveLoader = dataSource.kind === "live" ? dataSource.load : undefined;
   const mutations = dataSource.kind === "live" ? dataSource.mutations : undefined;
@@ -123,9 +129,11 @@ export function useGitDiffController({
     return () => {
       cancelled = true;
     };
-  }, [liveLoader, snapshotContent, stableTarget, t]);
+  }, [liveLoader, loadRevision, snapshotContent, stableTarget, t]);
 
   const parsed = useMemo(() => parseGitDiff(diffText, target.fileName), [diffText, target.fileName]);
+  const hunkCount = parsed?.file.hunks.length ?? 0;
+  const activeHunkNewStart = parsed?.file.hunks[activeHunkIndex]?.newStart;
   const trackedFile = target.status !== "U" && target.status !== "??";
   const canDiscardFile = trackedFile && Boolean(mutations?.requestDiscard);
   const canRevertHunks = canDiscardFile
@@ -147,6 +155,15 @@ export function useGitDiffController({
   }, []);
 
   const clearSelection = useCallback(() => setSelectedKeys([]), []);
+  const registerHunkAnchor = useCallback((hunkIndex: number, element: HTMLElement | null) => {
+    if (element) hunkAnchorsRef.current.set(hunkIndex, element);
+    else hunkAnchorsRef.current.delete(hunkIndex);
+  }, []);
+  const goToHunk = useCallback((hunkIndex: number) => {
+    if (hunkCount === 0) return;
+    const nextIndex = Math.min(Math.max(hunkIndex, 0), hunkCount - 1);
+    setActiveHunkIndex(nextIndex);
+  }, [hunkCount]);
   const requestDiscard = useCallback(
     () => mutations?.requestDiscard?.(stableTarget),
     [mutations, stableTarget],
@@ -157,6 +174,7 @@ export function useGitDiffController({
     setReverting(true);
     try {
       await mutations.revertHunk(stableTarget, diffText, hunkIndex);
+      setLoadRevision((revision) => revision + 1);
       onReverted?.();
     } catch {
       toast.error(t("git.diff.revertHunkFailed"));
@@ -172,6 +190,7 @@ export function useGitDiffController({
     setReverting(true);
     try {
       await mutations.revertLines(stableTarget, diffText, lines);
+      setLoadRevision((revision) => revision + 1);
       onReverted?.();
     } catch {
       toast.error(t("git.diff.revertLinesFailed"));
@@ -179,6 +198,21 @@ export function useGitDiffController({
       setReverting(false);
     }
   }, [diffText, mutations, onReverted, parsed, selectedKeys, stableTarget, t]);
+
+  useEffect(() => {
+    setActiveHunkIndex(initialHunkPlacement === "last" && hunkCount > 0 ? hunkCount - 1 : 0);
+  }, [hunkCount, initialHunkPlacement, stableTarget.id]);
+
+  useEffect(() => {
+    if (hunkCount === 0) return;
+    const frame = window.requestAnimationFrame(() => {
+      hunkAnchorsRef.current.get(activeHunkIndex)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeHunkIndex, hunkCount, stableTarget.id]);
 
   return {
     diffText,
@@ -191,8 +225,13 @@ export function useGitDiffController({
     canRevertHunks,
     canRevertLines,
     partialRevertUnavailable,
+    activeHunkIndex,
+    hunkCount,
+    activeHunkNewStart,
     toggleSelectedChange,
     clearSelection,
+    goToHunk,
+    registerHunkAnchor,
     requestDiscard,
     revertHunk,
     revertSelectedLines,

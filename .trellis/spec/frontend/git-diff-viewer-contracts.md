@@ -33,6 +33,69 @@ New navigation, display options, pinned-editor hosting, accessibility, and perfo
 - History and terminal-stat Diff use snapshots and remain read-only.
 - Unsupported text parsing falls back to the existing read-only Monaco renderer; supported file types remain unchanged.
 
+## Review Navigation
+
+### 1. Scope / Trigger
+
+- `GitDiffReviewDialog` is used only for the live Git changes review flow.
+- Snapshot consumers and the file editor compatibility facade do not receive file-list navigation.
+
+### 2. Signatures
+
+```ts
+buildGitDiffReviewTargets({
+  tree,
+  untrackedTree,
+  statusFilter,
+  repositoryPath,
+  repositoryRelativePath,
+}): GitDiffReviewTarget[];
+
+type GitDiffViewMode = "split" | "unified";
+```
+
+### 3. Contracts
+
+- The review dialog owns the filtered target list and active target identity; the controller owns the active Hunk within one target.
+- Target identity is repository context plus repository-relative file path. Status and line counts must not participate in identity, so refresh can retain the same target.
+- Target order is the rendered tracked tree followed by the rendered untracked tree. `M` and `D` filters exclude the untracked tree, matching `GitChangesPanel`.
+- `F7` and `Shift+F7` are handled by the focusable review viewer only. They must not install a global listener or affect terminals and other windows.
+- Moving past a file boundary selects the adjacent target and initializes its first or last Hunk. Navigation never wraps.
+- Source opening is an injected capability. The review layer passes the project-relative source path plus the active Hunk `newStart`; it never invokes Tauri or branches on local, WSL, macOS/Linux, or SSH state.
+- `settingsStore.gitDiffViewMode` defaults to `split`, accepts only `split | unified`, and belongs to the `preferences` sync domain.
+
+### 4. Validation & Error Matrix
+
+- Persisted mode outside `split | unified` -> migrate to `split`.
+- Active target removed on refresh -> retain its previous index and select the adjacent target.
+- No review targets remain -> close the review dialog.
+- Deleted target -> disable source opening.
+- Parsed Diff has no Hunks -> keep file-level navigation available.
+
+### 5. Good / Base / Bad Cases
+
+- Good: an SSH nested-repository target keeps Git paths repository-relative while source reveal receives the project-relative prefixed path.
+- Base: a one-file, one-Hunk review disables both navigation boundary buttons.
+- Bad: using `status` in target identity remounts the viewer during refresh and loses navigation position.
+- Bad: registering `F7` on `window` steals the shortcut from terminals outside the review dialog.
+
+### 6. Tests Required
+
+- Unit-test tracked/untracked order, `M`/`D` filtering, repository identity, refresh reconciliation, Hunk/file transitions, boundaries, and zero-Hunk fallback.
+- Assert settings default, persisted-value validation, and preference-sync classification.
+- Run the shared Viewer architecture test and the SSH Git regression test.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: environment and global state leak into the shared viewer.
+window.addEventListener("keydown", handleF7);
+invoke("git_get_file_diff", { projectPath, filePath });
+
+// Correct: the host injects transport and source-reveal capabilities.
+<GitDiffReviewDialog loadDiff={gitStore.loadFileDiff} onOpenSource={revealSource} />
+```
+
 ## Verification
 
 Run:
@@ -40,4 +103,5 @@ Run:
 ```bash
 npx tsc --noEmit
 node --test scripts/gitDiffViewerArchitecture.test.mjs scripts/gitStoreRemote.test.mjs
+node --test scripts/gitDiffReviewNavigation.test.mjs scripts/gitDiffSettings.test.mjs
 ```

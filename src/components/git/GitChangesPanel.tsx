@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -10,7 +10,8 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { GitChangesTree } from "./GitChangesTree";
 import { StageCheckbox, type StageState } from "./StageCheckbox";
 import { STATUS_CONFIG } from "./GitStatusIcon";
-import { DiffViewerModal } from "./DiffViewerModal";
+import { GitDiffReviewDialog } from "./diff/GitDiffReviewDialog";
+import type { GitDiffReviewTarget } from "./diff/reviewNavigation";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { useFileExplorerStore } from "../../stores/fileExplorerStore";
 import { useTerminalStore } from "../../stores/terminalStore";
@@ -325,10 +326,11 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
   } = useGitStore();
   const { gitGroupBy, update: updateSettings } = useSettingsStore();
   const openFileProject = useFileExplorerStore((state) => state.openProject);
-  const openFile = useFileExplorerStore((state) => state.openFile);
+  const revealFilePath = useFileExplorerStore((state) => state.revealPath);
+  const openPinnedDiff = useFileExplorerStore((state) => state.openDiff);
   const openFileEditorPane = useTerminalStore((state) => state.openFileEditorPane);
   const [diffModalOpen, setDiffModalOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<{ path: string; name: string; status: string } | null>(null);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [confirmAllOpen, setConfirmAllOpen] = useState(false);
   const [discardTarget, setDiscardTarget] = useState<{ path: string; name: string; status: string } | null>(null);
   const [deleteUntrackedTarget, setDeleteUntrackedTarget] = useState<{ paths: string[]; name: string } | null>(null);
@@ -510,29 +512,52 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
   };
 
   const handleFileClick = (filePath: string) => {
-    const fileName = filePath.split(/[\\/]/).pop() || filePath;
     const fileChange = changes.find(c => c.path === filePath);
     if (fileChange) {
-      setSelectedFile({ path: filePath, name: fileName, status: fileChange.status });
+      setSelectedFilePath(filePath);
       setDiffModalOpen(true);
     }
   };
 
-  const handleOpenSourceFile = async (filePath: string, status: string) => {
+  const projectRelativeGitPath = (filePath: string) => {
+    const repositoryPrefix = activeRepo?.relativePath?.replace(/\\/g, "/").replace(/^\/+|\/+$/gu, "");
+    const normalizedFilePath = filePath.replace(/\\/g, "/").replace(/^\/+|\/+$/gu, "");
+    return repositoryPrefix ? `${repositoryPrefix}/${normalizedFilePath}` : normalizedFilePath;
+  };
+
+  const openSourcePath = async (sourcePath: string, status: string, lineNumber?: number) => {
     if (!project || status === "D") return;
-    const fileName = filePath.split(/[\\/]/).pop() || filePath;
     try {
       await openFileProject(project);
-      await openFile({ name: fileName, path: filePath, kind: "file", sizeBytes: 0 });
+      const revealed = await revealFilePath(sourcePath, { lineNumber });
+      if (!revealed) throw new Error("git_diff_source_not_found");
       openFileEditorPane(project);
     } catch (err) {
       toast.error(t("files.toast.openFileFailed"), { description: String(err) });
     }
   };
 
-  const handleRequestDiscard = (path: string, name: string, status: string) => {
-    setDiscardTarget({ path, name, status });
+  const handleOpenSourceFile = (filePath: string, status: string) => {
+    void openSourcePath(projectRelativeGitPath(filePath), status);
   };
+
+  const handlePinDiff = async (target: GitDiffReviewTarget) => {
+    if (!project) return;
+    const change = changes.find((candidate) => candidate.path === target.filePath);
+    if (!change) return;
+    try {
+      await openFileProject(project);
+      openPinnedDiff({ ...change, path: target.sourcePath });
+      openFileEditorPane(project);
+      setDiffModalOpen(false);
+    } catch (err) {
+      toast.error(t("files.toast.openFileFailed"), { description: String(err) });
+    }
+  };
+
+  const handleRequestDiscard = useCallback((path: string, name: string, status: string) => {
+    setDiscardTarget({ path, name, status });
+  }, []);
 
   const handleRequestDeleteUntracked = (paths: string[], name: string) => {
     if (paths.length === 0) return;
@@ -1301,18 +1326,24 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
       )}
 
       {/* Diff Modal：diff 请求指向生效仓库（激活的子仓库或项目根） */}
-      {selectedFile && projectPath && (
-        <DiffViewerModal
+      {selectedFilePath && projectPath && (
+        <GitDiffReviewDialog
           open={diffModalOpen}
           onClose={() => setDiffModalOpen(false)}
-          projectPath={activeRepoPath ?? projectPath}
-          filePath={selectedFile.path}
-          fileName={selectedFile.name}
-          status={selectedFile.status}
+          repositoryPath={activeRepoPath ?? projectPath}
+          repositoryRelativePath={activeRepo?.relativePath}
+          tree={tree}
+          untrackedTree={untrackedTree}
+          statusFilter={statusFilter}
+          initialFilePath={selectedFilePath}
           loadDiff={loadFileDiff}
           revertHunk={revertHunk}
           revertLines={revertLines}
           onRequestDiscard={handleRequestDiscard}
+          onOpenSource={(target, lineNumber) => {
+            void openSourcePath(target.sourcePath, target.status, lineNumber);
+          }}
+          onPin={(target) => void handlePinDiff(target)}
         />
       )}
 

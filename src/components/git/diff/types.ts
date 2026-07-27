@@ -1,5 +1,6 @@
 import type { ChangeData, FileData, HunkTokens } from "react-diff-view";
 import type { GitFileDiffPayload } from "../../../lib/gitTransport";
+import type { GitDiffHunkPlacement } from "./reviewNavigation";
 
 export type GitDiffLineSide = "old" | "new";
 
@@ -14,6 +15,20 @@ export interface GitDiffTarget {
   filePath: string;
   fileName: string;
   status: string;
+}
+
+export interface GitDiffReviewContext {
+  fileIndex: number;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  initialHunkPlacement: GitDiffHunkPlacement;
+  canNavigateToPreviousFile: boolean;
+  canNavigateToNextFile: boolean;
+  onNavigateToPreviousFile: () => void;
+  onNavigateToNextFile: () => void;
+  onOpenSource: (lineNumber?: number) => void;
+  onPin?: () => void;
 }
 
 export interface GitDiffMutationActions {
@@ -59,8 +74,13 @@ export interface GitDiffController {
   canRevertHunks: boolean;
   canRevertLines: boolean;
   partialRevertUnavailable: boolean;
+  activeHunkIndex: number;
+  hunkCount: number;
+  activeHunkNewStart?: number;
   toggleSelectedChange: (args: { change: ChangeData | null }) => void;
   clearSelection: () => void;
+  goToHunk: (hunkIndex: number) => void;
+  registerHunkAnchor: (hunkIndex: number, element: HTMLElement | null) => void;
   requestDiscard: () => void;
   revertHunk: (hunkIndex: number) => Promise<void>;
   revertSelectedLines: () => Promise<void>;

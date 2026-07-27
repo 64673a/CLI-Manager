@@ -23,7 +23,9 @@ export function GitDiffHeader({
         borderColor: "color-mix(in srgb, var(--border) 24%, transparent)",
       }}
     >
-      <h2 className="text-base font-semibold text-text-primary">Diff: {fileName}</h2>
+      <h2 className="text-base font-semibold text-text-primary">
+        {t("git.diff.title", { fileName })}
+      </h2>
       <div className="flex items-center gap-2">
         {canDiscardFile && (
           <button

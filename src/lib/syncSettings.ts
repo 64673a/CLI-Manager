@@ -98,6 +98,7 @@ export const SETTING_BACKUP_POLICY = {
   grokHookConfigDir: "excluded",
   ccSwitchDbPath: "excluded",
   gitGroupBy: "preferences",
+  gitDiffViewMode: "preferences",
   confirmBeforeClosingTerminalTab: "preferences",
   terminalTabHoverInfoEnabled: "preferences",
   fileExplorerIgnoredPaths: "preferences",

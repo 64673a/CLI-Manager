@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Decoration, Diff, Hunk } from "react-diff-view";
 import { Undo2 } from "../../icons";
 import { useI18n } from "../../../lib/i18n";
+import type { GitDiffViewMode } from "../../../stores/settingsStore";
 import { TERMINAL_DIFF_TABLE_STYLE } from "./theme";
 import type { GitDiffController } from "./types";
 
@@ -13,12 +14,14 @@ interface GitDiffContentProps {
   controller: GitDiffController;
   fallbackEditorTheme: "vs" | "vs-dark";
   useTerminalTheme: boolean;
+  viewMode: GitDiffViewMode;
 }
 
 export function GitDiffContent({
   controller,
   fallbackEditorTheme,
   useTerminalTheme,
+  viewMode,
 }: GitDiffContentProps) {
   const { t } = useI18n();
   const {
@@ -32,6 +35,9 @@ export function GitDiffContent({
     canRevertLines,
     toggleSelectedChange,
     revertHunk,
+    activeHunkIndex,
+    goToHunk,
+    registerHunkAnchor,
   } = controller;
 
   return (
@@ -62,7 +68,7 @@ export function GitDiffContent({
             : { backgroundColor: "var(--surface-container-lowest)", borderColor: "var(--border)" }}
         >
           <Diff
-            viewType="split"
+            viewType={viewMode}
             diffType={parsed.file.type}
             hunks={parsed.file.hunks}
             tokens={parsed.tokens}
@@ -72,9 +78,15 @@ export function GitDiffContent({
             {(hunks) => hunks.flatMap((hunk, index) => [
               <Decoration key={`deco-${index}-${hunk.content}`}>
                 <div
+                  ref={(element) => registerHunkAnchor(index, element)}
+                  data-git-diff-hunk-index={index}
+                  aria-current={activeHunkIndex === index ? "location" : undefined}
+                  onClick={() => goToHunk(index)}
                   className="flex items-center justify-between gap-2 px-3 py-1"
                   style={{
-                    backgroundColor: "var(--surface-container-low)",
+                    backgroundColor: activeHunkIndex === index
+                      ? "var(--surface-container-high)"
+                      : "var(--surface-container-low)",
                     borderTop: "1px solid color-mix(in srgb, var(--border) 20%, transparent)",
                   }}
                 >

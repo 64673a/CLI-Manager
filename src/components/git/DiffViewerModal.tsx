@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { GitFileDiffPayload } from "../../lib/gitTransport";
-import { Portal } from "../ui/Portal";
+import { useI18n } from "../../lib/i18n";
+import { GitDiffDialogFrame } from "./diff/GitDiffDialogFrame";
 import { GitDiffViewer as StructuredGitDiffViewer } from "./diff/GitDiffViewer";
 import type {
   GitDiffDataSource,
@@ -84,36 +85,10 @@ export function GitDiffViewer({
 }
 
 export function DiffViewerModal({ open, onClose, ...viewerProps }: DiffViewerModalProps) {
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
+  const { t } = useI18n();
   return (
-    <Portal>
-      <div
-        className="fixed inset-0 flex items-center justify-center bg-black/60 p-4"
-        style={{ zIndex: 100 }}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) onClose();
-        }}
-      >
-        <div
-          className="h-[85vh] w-full max-w-6xl overflow-hidden rounded-xl border shadow-2xl"
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <GitDiffViewer {...viewerProps} onClose={onClose} closeOnRevert />
-        </div>
-      </div>
-    </Portal>
+    <GitDiffDialogFrame open={open} onClose={onClose} ariaLabel={t("git.diff.reviewDialog")}>
+      <GitDiffViewer {...viewerProps} onClose={onClose} closeOnRevert />
+    </GitDiffDialogFrame>
   );
 }

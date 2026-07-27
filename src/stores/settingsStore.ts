@@ -65,6 +65,7 @@ export type DarkThemePalette =
 export type TerminalThemeMode = "system" | "independent";
 export type SidebarDensity = "compact" | "comfortable";
 export type ViewMode = "standard" | "compact";
+export type GitDiffViewMode = "split" | "unified";
 export type CloseBehavior = "ask" | "minimize" | "exit";
 /** 退出时存在运行中任务的处理方式：询问 / 后台继续 / 最小化到托盘 / 丢弃任务并退出。 */
 export type ExitWithRunningTasksBehavior = "ask" | "background" | "minimize" | "discard";
@@ -425,6 +426,8 @@ export interface Settings {
   ccSwitchDbPath: string | null;
   /** Git 变更树分组模式：directory（按目录树） / module（按顶层目录模块） */
   gitGroupBy: "directory" | "module";
+  /** Git Diff 显示模式：左右分栏或统一单栏。 */
+  gitDiffViewMode: GitDiffViewMode;
   confirmBeforeClosingTerminalTab: boolean;
   terminalTabHoverInfoEnabled: boolean;
   fileExplorerIgnoredPaths: FileExplorerIgnoredPaths;
@@ -594,6 +597,7 @@ const DEFAULTS: Settings = {
   grokHookConfigDir: null,
   ccSwitchDbPath: null,
   gitGroupBy: "directory",
+  gitDiffViewMode: "split",
   confirmBeforeClosingTerminalTab: false,
   terminalTabHoverInfoEnabled: true,
   fileExplorerIgnoredPaths: {},
@@ -1465,6 +1469,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       entries.gitGroupBy === "directory" || entries.gitGroupBy === "module"
         ? entries.gitGroupBy
         : DEFAULTS.gitGroupBy;
+    entries.gitDiffViewMode =
+      entries.gitDiffViewMode === "split" || entries.gitDiffViewMode === "unified"
+        ? entries.gitDiffViewMode
+        : DEFAULTS.gitDiffViewMode;
     entries.fileExplorerIgnoredPaths = migrateFileExplorerIgnoredPaths(entries.fileExplorerIgnoredPaths);
     entries.batchLaunchGroupInPane =
       typeof entries.batchLaunchGroupInPane === "boolean"

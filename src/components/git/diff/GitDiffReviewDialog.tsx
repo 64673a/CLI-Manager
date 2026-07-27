@@ -1,0 +1,150 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { GitFileDiffPayload } from "../../../lib/gitTransport";
+import { useI18n } from "../../../lib/i18n";
+import type { GitTreeNode } from "../../../lib/types";
+import { useSettingsStore } from "../../../stores/settingsStore";
+import { GitDiffViewer } from "./GitDiffViewer";
+import { GitDiffDialogFrame } from "./GitDiffDialogFrame";
+import {
+  buildGitDiffReviewTargets,
+  reconcileReviewTargetIndex,
+  type GitDiffHunkPlacement,
+  type GitDiffReviewStatusFilter,
+  type GitDiffReviewTarget,
+} from "./reviewNavigation";
+import type { GitDiffDataSource, GitDiffSelectedLine } from "./types";
+
+interface GitDiffReviewDialogProps {
+  open: boolean;
+  onClose: () => void;
+  repositoryPath: string;
+  repositoryRelativePath?: string;
+  tree: GitTreeNode[];
+  untrackedTree: GitTreeNode[];
+  statusFilter: GitDiffReviewStatusFilter;
+  initialFilePath: string;
+  loadDiff: (filePath: string, status: string) => Promise<GitFileDiffPayload>;
+  revertHunk: (filePath: string, diffText: string, hunkIndex: number) => Promise<void>;
+  revertLines: (
+    filePath: string,
+    diffText: string,
+    selectedLines: GitDiffSelectedLine[],
+  ) => Promise<void>;
+  onRequestDiscard: (path: string, name: string, status: string) => void;
+  onOpenSource: (target: GitDiffReviewTarget, lineNumber?: number) => void;
+  onPin: (target: GitDiffReviewTarget) => void;
+}
+
+export function GitDiffReviewDialog({
+  open,
+  onClose,
+  repositoryPath,
+  repositoryRelativePath,
+  tree,
+  untrackedTree,
+  statusFilter,
+  initialFilePath,
+  loadDiff,
+  revertHunk,
+  revertLines,
+  onRequestDiscard,
+  onOpenSource,
+  onPin,
+}: GitDiffReviewDialogProps) {
+  const { t } = useI18n();
+  const gitDiffViewMode = useSettingsStore((state) => state.gitDiffViewMode);
+  const updateSettings = useSettingsStore((state) => state.update);
+  const targets = useMemo(() => buildGitDiffReviewTargets({
+    tree,
+    untrackedTree,
+    statusFilter,
+    repositoryPath,
+    repositoryRelativePath,
+  }), [repositoryPath, repositoryRelativePath, statusFilter, tree, untrackedTree]);
+  const [activeTargetId, setActiveTargetId] = useState<string | null>(null);
+  const [initialHunkPlacement, setInitialHunkPlacement] = useState<GitDiffHunkPlacement>("first");
+  const previousIndexRef = useRef(0);
+
+  useEffect(() => {
+    if (!open) return;
+    const initialIndex = targets.findIndex((target) => target.filePath === initialFilePath);
+    const nextIndex = initialIndex >= 0 ? initialIndex : 0;
+    previousIndexRef.current = nextIndex;
+    setInitialHunkPlacement("first");
+    setActiveTargetId(targets[nextIndex]?.id ?? null);
+  }, [initialFilePath, open, repositoryPath]);
+
+  const activeIndex = reconcileReviewTargetIndex(
+    targets,
+    activeTargetId,
+    previousIndexRef.current,
+  );
+  const activeTarget = activeIndex >= 0 ? targets[activeIndex] : null;
+
+  useEffect(() => {
+    if (!activeTarget) return;
+    previousIndexRef.current = activeIndex;
+    if (activeTarget.id !== activeTargetId) setActiveTargetId(activeTarget.id);
+  }, [activeIndex, activeTarget, activeTargetId]);
+
+  useEffect(() => {
+    if (open && activeTargetId && targets.length === 0) onClose();
+  }, [activeTargetId, onClose, open, targets.length]);
+
+  const dataSource = useMemo<GitDiffDataSource>(() => ({
+    kind: "live",
+    load: (target) => loadDiff(target.filePath, target.status),
+    mutations: {
+      revertHunk: (target, content, hunkIndex) => (
+        revertHunk(target.filePath, content, hunkIndex)
+      ),
+      revertLines: (target, content, lines) => revertLines(target.filePath, content, lines),
+      requestDiscard: (target) => onRequestDiscard(
+        target.filePath,
+        target.fileName,
+        target.status,
+      ),
+    },
+  }), [loadDiff, onRequestDiscard, revertHunk, revertLines]);
+
+  const selectAdjacentFile = useCallback((offset: -1 | 1) => {
+    const nextTarget = targets[activeIndex + offset];
+    if (!nextTarget) return;
+    previousIndexRef.current = activeIndex + offset;
+    setInitialHunkPlacement(offset < 0 ? "last" : "first");
+    setActiveTargetId(nextTarget.id);
+  }, [activeIndex, targets]);
+
+  return (
+    <GitDiffDialogFrame
+      open={open}
+      onClose={onClose}
+      ariaLabel={t("git.diff.reviewDialog")}
+      focusOnOpen={false}
+    >
+      {activeTarget && (
+        <GitDiffViewer
+          key={activeTarget.id}
+          target={activeTarget}
+          dataSource={dataSource}
+          onClose={onClose}
+          viewMode={gitDiffViewMode}
+          onViewModeChange={(mode) => void updateSettings("gitDiffViewMode", mode)}
+          review={{
+            fileIndex: activeIndex,
+            fileCount: targets.length,
+            additions: activeTarget.additions,
+            deletions: activeTarget.deletions,
+            initialHunkPlacement,
+            canNavigateToPreviousFile: activeIndex > 0,
+            canNavigateToNextFile: activeIndex + 1 < targets.length,
+            onNavigateToPreviousFile: () => selectAdjacentFile(-1),
+            onNavigateToNextFile: () => selectAdjacentFile(1),
+            onOpenSource: (lineNumber) => onOpenSource(activeTarget, lineNumber),
+            onPin: () => onPin(activeTarget),
+          }}
+        />
+      )}
+    </GitDiffDialogFrame>
+  );
+}
