@@ -1649,3 +1649,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: 修复历史会话转换、删除与列表刷新
+
+**Date**: 2026-07-27
+**Task**: 修复历史会话转换、删除与列表刷新
+**Branch**: `master`
+
+### Summary
+
+修复 Claude/Codex 转换后的详情身份与恢复 CLI 串线；显式删除不再被同来源进程误拦截，备份恢复仍保持排他；历史索引自动/手动刷新保留已加载范围和滚动位置，并补齐契约与回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3556a869` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
