@@ -14,7 +14,7 @@ import {
   type CcConnectHandoffStatus,
 } from "../lib/remoteHandoff";
 import { findWorktreeForSession } from "../lib/terminalProject";
-import { extractCodexResumeSessionId } from "../lib/resumeCliArgs";
+import { detectCodexLaunchSessionSelection } from "../lib/resumeCliArgs";
 import { selectUniqueSshCodexSessionBinding } from "../lib/sshCodexSessionBinding";
 import type { Project, RemoteHandoffSessionState, TerminalSession } from "../lib/types";
 import { useI18n, type TranslationKey } from "../lib/i18n";
@@ -99,7 +99,7 @@ async function resolveSshHandoffSessionIdentity(
     terminalActivityAtMs: terminalState.ptyOutputActivityAt[session.id] ?? 0,
     nowMs: Date.now(),
     alreadyBoundSessionIds,
-    requestedSessionId: extractCodexResumeSessionId(session.startupCmd),
+    launchSelection: detectCodexLaunchSessionSelection(session.startupCmd),
   });
   if (selection.status === "not_found") {
     throw new Error("remote_handoff_ssh_session_not_found");

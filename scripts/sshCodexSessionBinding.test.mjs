@@ -45,14 +45,14 @@ function summary(overrides = {}) {
   };
 }
 
-function select(summaries, alreadyBoundSessionIds = new Set(), requestedSessionId = null) {
+function select(summaries, alreadyBoundSessionIds = new Set(), launchSelection = { kind: "new" }) {
   return binding.selectUniqueSshCodexSessionBinding({
     summaries,
     terminalStartedAtMs,
     terminalActivityAtMs: nowMs - 5_000,
     nowMs,
     alreadyBoundSessionIds,
-    requestedSessionId,
+    launchSelection,
   });
 }
 
@@ -80,7 +80,10 @@ test("an explicit resume target bypasses creation-time inference", () => {
     created_at: terminalStartedAtMs - 12 * 60 * 60 * 1_000,
     updated_at: terminalStartedAtMs - 5 * 60 * 1_000,
   });
-  assert.deepEqual(select([resumed], new Set(), "thread-1"), {
+  assert.deepEqual(select([resumed], new Set(), {
+    kind: "explicit",
+    sessionId: "thread-1",
+  }), {
     status: "resolved",
     sessionId: "thread-1",
     sourceInstanceId: "remote-source-1",
@@ -88,7 +91,48 @@ test("an explicit resume target bypasses creation-time inference", () => {
 });
 
 test("an explicit resume target fails closed instead of binding another recent session", () => {
-  assert.deepEqual(select([summary()], new Set(), "thread-missing"), {
+  assert.deepEqual(select([summary()], new Set(), {
+    kind: "explicit",
+    sessionId: "thread-missing",
+  }), {
+    status: "not_found",
+  });
+});
+
+test("resume --last selects the uniquely latest SSH Codex session without creation-time inference", () => {
+  const resumed = summary({
+    created_at: terminalStartedAtMs - 12 * 60 * 60 * 1_000,
+    updated_at: terminalStartedAtMs - 5 * 60 * 1_000,
+  });
+  const older = summary({
+    session_id: "thread-2",
+    created_at: terminalStartedAtMs - 24 * 60 * 60 * 1_000,
+    updated_at: terminalStartedAtMs - 6 * 60 * 1_000,
+    session_ref: { ...summary().session_ref, sourceSessionId: "thread-2" },
+  });
+
+  assert.deepEqual(select([older, resumed], new Set(), { kind: "last" }), {
+    status: "resolved",
+    sessionId: "thread-1",
+    sourceInstanceId: "remote-source-1",
+  });
+});
+
+test("resume --last fails closed for a tied or already-bound latest session", () => {
+  const tied = summary({
+    session_id: "thread-2",
+    session_ref: { ...summary().session_ref, sourceSessionId: "thread-2" },
+  });
+  assert.deepEqual(select([summary(), tied], new Set(), { kind: "last" }), {
+    status: "ambiguous",
+  });
+  assert.deepEqual(select([summary()], new Set(["thread-1"]), { kind: "last" }), {
+    status: "not_found",
+  });
+});
+
+test("interactive resume without a deterministic target fails closed", () => {
+  assert.deepEqual(select([summary()], new Set(), { kind: "interactive" }), {
     status: "not_found",
   });
 });

@@ -57,7 +57,11 @@ const saveSessionPath = transpile(
   },
 );
 
-const { extractCodexResumeSessionId, stripResumeCliArgs } = await import(
+const {
+  detectCodexLaunchSessionSelection,
+  extractCodexResumeSessionId,
+  stripResumeCliArgs,
+} = await import(
   pathToFileURL(join(tempDir, "resumeCliArgs.mjs")).href
 );
 const { appendResumeCliArgs } = await import(pathToFileURL(projectStartupPath).href);
@@ -79,6 +83,20 @@ test("extracts an explicit Codex resume session id", () => {
 
   for (const [command, expected] of cases) {
     assert.equal(extractCodexResumeSessionId(command), expected, command);
+  }
+});
+
+test("classifies Codex launch session selection modes", () => {
+  const cases = [
+    ["codex", { kind: "new" }],
+    [`codex resume --no-alt-screen ${OLD_ID}`, { kind: "explicit", sessionId: OLD_ID }],
+    ["codex resume --no-alt-screen --last", { kind: "last" }],
+    ["codex resume", { kind: "interactive" }],
+    [`claude resume ${OLD_ID}`, { kind: "new" }],
+  ];
+
+  for (const [command, expected] of cases) {
+    assert.deepEqual(detectCodexLaunchSessionSelection(command), expected, command);
   }
 });
 

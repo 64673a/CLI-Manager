@@ -3,6 +3,12 @@ interface CliArgToken {
   normalized: string;
 }
 
+export type CodexLaunchSessionSelection =
+  | { kind: "new" }
+  | { kind: "explicit"; sessionId: string }
+  | { kind: "last" }
+  | { kind: "interactive" };
+
 function tokenizeCliArgs(cliArgs: string): CliArgToken[] {
   const tokens: CliArgToken[] = [];
   let index = 0;
@@ -111,24 +117,27 @@ function isCodexCommandToken(token: CliArgToken): boolean {
     || executable === "codex.bat";
 }
 
-/**
- * Extract the explicit target from a `codex resume <session-id>` command.
- * Selector-only forms such as `resume --last` intentionally return null.
- */
-export function extractCodexResumeSessionId(command: string | null | undefined): string | null {
+export function detectCodexLaunchSessionSelection(
+  command: string | null | undefined,
+): CodexLaunchSessionSelection {
   const tokens = tokenizeCliArgs(command ?? "");
   const resumeIndex = tokens.findIndex((token, index) => (
     token.normalized === "resume"
     && tokens.slice(0, index).some(isCodexCommandToken)
   ));
-  if (resumeIndex < 0) return null;
+  if (resumeIndex < 0) return { kind: "new" };
+
+  let selectsLast = false;
 
   for (let index = resumeIndex + 1; index < tokens.length; index += 1) {
     const token = tokens[index];
     if (token.raw === "--") continue;
 
     const name = optionName(token);
-    if (name === "--last") return null;
+    if (name === "--last") {
+      selectsLast = true;
+      continue;
+    }
     if (CODEX_RESUME_SELECTION_OPTIONS.has(name)) continue;
     if (isOptionToken(token)) {
       if (takesSeparateOptionValue(token)) index += 1;
@@ -136,10 +145,22 @@ export function extractCodexResumeSessionId(command: string | null | undefined):
     }
 
     const sessionId = unquoteCliArg(token);
-    return sessionId && !/[\s\0\r\n]/.test(sessionId) ? sessionId : null;
+    if (!sessionId || /[\s\0\r\n]/.test(sessionId) || selectsLast) {
+      return { kind: "interactive" };
+    }
+    return { kind: "explicit", sessionId };
   }
 
-  return null;
+  return selectsLast ? { kind: "last" } : { kind: "interactive" };
+}
+
+/**
+ * Extract the explicit target from a `codex resume <session-id>` command.
+ * Selector-only forms such as `resume --last` intentionally return null.
+ */
+export function extractCodexResumeSessionId(command: string | null | undefined): string | null {
+  const selection = detectCodexLaunchSessionSelection(command);
+  return selection.kind === "explicit" ? selection.sessionId : null;
 }
 
 function stripCodexResumeTail(tokens: CliArgToken[], start: number): string[] {
