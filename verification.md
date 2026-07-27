@@ -1,3 +1,29 @@
+# SSH NVM Codex 启动环境修复验证（2026-07-28）
+
+## 根因与发现清单
+
+- 根因位于本机 SSH Proxy 到远端 Codex 的进程启动边界：普通 SSH 终端使用交互式登录 Shell，能通过用户启动脚本加载 NVM；托管代理此前使用非交互登录 Shell `-lc`，远端因此返回 `codex: command not found`，cc-connect 最终只显示“无法连接远端 Codex app-server”。修复落在 `SshCodexLaunch::remote_command`，使代理与终端使用相同的用户环境发现规则。
+- 远端启动改为交互式登录 Shell `-lic`，但 Shell 初始化阶段的 stdout 全部导向 stderr；仅在执行 `codex app-server` 时恢复原始 stdout，避免 `.bashrc` banner、NVM 初始化输出或其他 profile 文本污染 JSON-RPC 流。
+- 代码触点确认：`SshCodexLaunch::remote_command` 负责远端命令构造；预检和正式托管共用该启动计划，因此同时修复；OpenSSH 参数、AskPass 凭据、Provider 注入、Git `safe.directory`、取消托管恢复和 cc-connect 源码均未改动。
+- 运行场景确认：NVM、fnm/asdf 等依赖交互式 Shell 初始化的用户工具路径可被发现；系统 PATH 中已有 Codex 的主机保持兼容；有无初始化输出均由 stdout 隔离保护协议；认证方式、跳板/代理、窗口焦点、分屏及桌宠显示状态不改变该启动逻辑。
+- `SshCodexLaunch.remote_command` 属于预检和正式托管共享的 CRITICAL 调用面；本次只调整远端 Shell 启动与文件描述符路由，并通过真实 SSH 探测、单元测试和代理端到端测试复核。
+
+## 验证结果
+
+- 真实 SSH 只读探测通过：非交互登录 Shell 无法找到 NVM 中的 Codex；交互式登录 Shell 能解析远端 Codex 0.145.0，并且 app-server 在 stdin EOF 后以状态 0 退出。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml codex_app_server_proxy::tests --lib`：13 项通过。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml commands::cc_connect:: --lib`：57 项通过。
+- `npm run test:codex-proxy:e2e`：4 项通过。
+- `cargo fmt --check --manifest-path src-tauri/Cargo.toml`、`cargo check --locked --manifest-path src-tauri/Cargo.toml`：通过。
+- `npm run tauri:build:local -- --bundles nsis`：通过，仅生成 NSIS；安装包为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`，17,502,968 字节，SHA-256 `798516D71D8C1F10DAA26892C343C3F3A498C4693573E45FF18FC4C18BF39539`。
+
+## 未覆盖与测试边界
+
+- 已验证真实 SSH、远端目录和 Codex app-server 启动，但未使用真实 Telegram/飞书/微信/企业微信消息完成“手机消息 -> 远端 Codex -> 回复”全链路；需由安装包复测消息平台侧行为。
+- 本次未复制安装包、未停止用户服务、未修改 cc-connect 源码或全局安装。
+
+---
+
 # 桌宠 Agent 状态与 SSH 托管身份修复验证（2026-07-27）
 
 ## 根因与发现清单
@@ -24,7 +50,7 @@
 
 ## 未覆盖与测试边界
 
-- 当前未连接可用于自动化的真实 SSH Codex 主机和消息平台账号，因此远端历史唯一识别、托管对话及取消恢复仍需使用安装包做一次真实链路冒烟。
+- 已连接真实 SSH Codex 主机完成远端目录、Codex 发现和 app-server 启动探测；消息平台对话、远端历史唯一识别及取消恢复仍需使用安装包做一次完整链路冒烟。
 - 未启动桌面窗口手动切换中英文；新增键已由 `zh-CN`/`en-US` 类型约束和生产构建覆盖。
 
 ---
@@ -57,7 +83,7 @@
 
 ## 未覆盖与发布边界
 
-- 当前没有可用于自动化测试的真实 SSH 主机和四个平台账号组合，因此尚未执行真实手机消息 -> 远端 Codex -> 取消后本地恢复的端到端冒烟；首轮安装包测试应覆盖 Agent、私钥、已保存密码、跳板/代理和 Host Key 异常。
+- 已使用真实 SSH 主机验证已保存密码链路、远端目录及 Codex app-server 启动；尚未执行真实手机消息 -> 远端 Codex -> 取消后本地恢复的端到端冒烟，安装包测试仍应覆盖 Agent、私钥、跳板/代理和 Host Key 异常。
 - 未启动 Tauri 窗口手动切换中英文；新增文案已由 TypeScript 完整键约束和生产构建覆盖。
 - `npm run tauri:build:local -- --bundles nsis`：通过，仅构建 NSIS；产物为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`。本次未复制安装包、未停止用户服务、未 push。
 

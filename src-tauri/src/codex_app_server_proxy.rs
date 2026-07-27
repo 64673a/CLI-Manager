@@ -226,9 +226,9 @@ impl SshCodexLaunch {
             .map(|argument| posix_quote(&argument))
             .collect::<Vec<_>>()
             .join(" ");
-        commands.push(format!("exec {invocation}"));
+        commands.push(format!("exec {invocation} 1>&3 3>&-"));
         format!(
-            "cd -- {} && exec \"${{SHELL:-/bin/sh}}\" -lc {}",
+            "cd -- {} && exec 3>&1 && exec \"${{SHELL:-/bin/sh}}\" -lic {} 1>&2",
             posix_quote(self.remote_path.trim()),
             posix_quote(&commands.join("\n"))
         )
@@ -1091,7 +1091,10 @@ mod tests {
         ];
         let command = launch.remote_command(&args);
 
-        assert!(command.starts_with("cd -- '/srv/project dir' && exec"));
+        assert!(command.starts_with("cd -- '/srv/project dir' && exec 3>&1 && exec"));
+        assert!(command.contains("\"${SHELL:-/bin/sh}\" -lic"));
+        assert!(command.ends_with("1>&2"));
+        assert!(command.contains("1>&3 3>&-"));
         assert!(command.contains("source ~/.profile"));
         assert_eq!(
             format_remote_home_path("~/codex config"),
