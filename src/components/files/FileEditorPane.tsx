@@ -216,6 +216,38 @@ export function FileEditorPane({ session, isActive, terminalThemeBackground, onC
     () => isDarkHexColor(terminalThemeBackground) ? "vs-dark" : "vs",
     [terminalThemeBackground]
   );
+  const projectPath = project?.path;
+
+  const loadProjectGitDiff = useCallback((filePath: string, status: string) => {
+    if (!projectPath) return Promise.reject(new Error("git_diff_project_missing"));
+    return invoke<GitFileDiffPayload>("git_get_file_diff", {
+      projectPath,
+      filePath,
+      status,
+    });
+  }, [projectPath]);
+
+  const revertProjectGitHunk = useCallback((_filePath: string, diffText: string, hunkIndex: number) => {
+    if (!projectPath) return Promise.reject(new Error("git_diff_project_missing"));
+    return invoke<void>("git_revert_hunk", {
+      projectPath,
+      diffText,
+      hunkIndex,
+    });
+  }, [projectPath]);
+
+  const revertProjectGitLines = useCallback((
+    _filePath: string,
+    diffText: string,
+    selectedLines: { side: "old" | "new"; lineNumber: number }[],
+  ) => {
+    if (!projectPath) return Promise.reject(new Error("git_diff_project_missing"));
+    return invoke<void>("git_revert_lines", {
+      projectPath,
+      diffText,
+      selectedLines,
+    });
+  }, [projectPath]);
 
   const handleEditorMount = useCallback<OnMount>((editor) => {
     editorRef.current = editor;
@@ -250,11 +282,7 @@ export function FileEditorPane({ session, isActive, terminalThemeBackground, onC
     if (visibleFile.previewKind === "markdown" && previewMode !== "source") return;
 
     let cancelled = false;
-    void invoke<GitFileDiffPayload>("git_get_file_diff", {
-      projectPath: project.path,
-      filePath: visibleFile.path,
-      status: activeGitChange.status,
-    })
+    void loadProjectGitDiff(visibleFile.path, activeGitChange.status)
       .then((payload) => {
         if (cancelled || editorRef.current !== editor) return;
         const currentModel = editor.getModel();
@@ -279,6 +307,7 @@ export function FileEditorPane({ session, isActive, terminalThemeBackground, onC
     editorReadyNonce,
     previewMode,
     project?.path,
+    loadProjectGitDiff,
     visibleFile?.modifiedMs,
     visibleFile?.path,
     visibleFile?.previewKind,
@@ -601,6 +630,9 @@ export function FileEditorPane({ session, isActive, terminalThemeBackground, onC
             filePath={visibleDiff.path}
             fileName={visibleDiff.name}
             status={visibleDiff.status}
+            loadDiff={loadProjectGitDiff}
+            revertHunk={revertProjectGitHunk}
+            revertLines={revertProjectGitLines}
             onRequestDiscard={requestDiscardDiffFile}
             onReverted={() => void refreshVisibleState()}
             useTerminalTheme
