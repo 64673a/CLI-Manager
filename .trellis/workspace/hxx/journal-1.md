@@ -1616,3 +1616,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 修复历史转换与继续对话
+
+**Date**: 2026-07-27
+**Task**: 修复历史转换与继续对话
+**Branch**: `master`
+
+### Summary
+
+放开非破坏性 Claude/Codex 历史转换的运行态误阻断，保证共享 JSONL 单次追加，并让跨 CLI 转换后的会话在 cwd 唯一命中时直接裸恢复。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a4232e9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
