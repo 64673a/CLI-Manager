@@ -28,7 +28,7 @@ pub(crate) mod request_logs;
 
 use super::history_backup::{
     create_file_backup_snapshot, default_backup_root, ensure_source_mutation_unlocked,
-    is_target_tool_running, lock_source_mutations,
+    lock_source_mutations,
 };
 
 /// BufReader 容量；默认 8KB 对几 MB 的 jsonl 文件 syscall 次数偏多。
@@ -607,6 +607,7 @@ pub struct HistoryConversionResult {
     pub message_count: usize,
     pub resume_command: String,
     pub summary: HistorySessionSummary,
+    pub detail: HistorySessionDetail,
 }
 
 struct CodexThreadRegistration {
@@ -4746,20 +4747,24 @@ fn convert_history_session(
         append_codex_session_index(roots, detail, &session_id, &target_path, cwd.as_deref())?;
     }
 
+    let target_project_key = match target_source.as_str() {
+        "claude" => target_path
+            .canonicalize()
+            .map_err(|_| "history_conversion_target_file_unavailable".to_string())?
+            .parent()
+            .and_then(Path::file_name)
+            .map(|value| value.to_string_lossy().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "history_conversion_target_project_unavailable".to_string())?,
+        "codex" => cwd
+            .as_deref()
+            .and_then(project_key_from_cwd)
+            .unwrap_or_else(|| detail.project_key.clone()),
+        _ => unreachable!(),
+    };
     let file_ref = SessionFileRef {
         source: target_source.clone(),
-        project_key: match target_source.as_str() {
-            "claude" => cwd
-                .as_deref()
-                .map(claude_project_key_from_path)
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "default".to_string()),
-            "codex" => cwd
-                .as_deref()
-                .and_then(project_key_from_cwd)
-                .unwrap_or_else(|| detail.project_key.clone()),
-            _ => unreachable!(),
-        },
+        project_key: target_project_key,
         path: target_path.clone(),
     };
     let fingerprint = session_file_fingerprint(&file_ref.path);
@@ -4776,6 +4781,13 @@ fn convert_history_session(
         message_count,
         branch: detail.branch.clone(),
     };
+    let target_detail = build_session_detail(&file_ref, false)?;
+    if target_detail.source != target_source
+        || target_detail.session_id != session_id
+        || target_detail.file_path != summary.file_path
+    {
+        return Err("history_conversion_detail_mismatch".to_string());
+    }
 
     Ok(HistoryConversionResult {
         source,
@@ -4791,6 +4803,7 @@ fn convert_history_session(
             _ => unreachable!(),
         },
         summary,
+        detail: target_detail,
     })
 }
 
@@ -4800,9 +4813,6 @@ fn delete_session_tree_with_backup_root(
 ) -> Result<usize, String> {
     if is_subagent_transcript_path(&file_ref.path) {
         return Err("history_subagent_mutation_not_allowed".to_string());
-    }
-    if is_target_tool_running(&file_ref.source) {
-        return Err("history_target_tool_running".to_string());
     }
     let mut paths = collect_subtask_session_file_refs(file_ref)
         .into_iter()
@@ -13759,17 +13769,40 @@ mod tests {
             claude_config_dir: Some(temp_dir.path().join(".claude")),
             codex_config_dir: Some(temp_dir.path().join(".codex")),
         };
+        if cfg!(target_os = "windows") {
+            std::fs::create_dir_all(
+                resolve_claude_history_root(&roots).join("F--ws-Labway-Fee-Control"),
+            )
+            .unwrap();
+        }
 
-        let result = convert_history_session(&sample_detail("codex"), "claude", &roots).unwrap();
+        let mut source_detail = sample_detail("codex");
+        source_detail.cwd = Some(r"F:\ws\Labway\Fee-Control".to_string());
+        let result = convert_history_session(&source_detail, "claude", &roots).unwrap();
         assert_eq!(result.target_source, "claude");
         assert_eq!(result.message_count, 2);
         assert!(result.resume_command.starts_with("claude --resume "));
         assert_eq!(result.summary.source, "claude");
         assert_eq!(result.summary.session_id, result.session_id);
         assert_eq!(result.summary.message_count, 2);
+        assert_eq!(result.detail.source, "claude");
+        assert_eq!(result.detail.session_id, result.session_id);
+        assert_eq!(result.detail.file_path, result.summary.file_path);
+        assert_eq!(result.detail.messages.len(), 2);
 
         let files = collect_claude_session_files(&resolve_claude_history_root(&roots));
         assert_eq!(files.len(), 1);
+        assert_eq!(result.project_key, files[0].project_key);
+        assert_eq!(result.summary.project_key, files[0].project_key);
+        assert_eq!(result.detail.project_key, files[0].project_key);
+        let reopened = validate_session_file_ref(
+            &result.file_path,
+            &result.target_source,
+            &result.project_key,
+            &roots,
+        )
+        .unwrap();
+        assert_eq!(reopened.path, files[0].path.canonicalize().unwrap());
         let detail = build_session_detail(&files[0], false).unwrap();
         assert_eq!(detail.source, "claude");
         assert_eq!(detail.messages.len(), 2);
@@ -13806,6 +13839,10 @@ mod tests {
         assert_eq!(result.summary.source, "codex");
         assert_eq!(result.summary.session_id, result.session_id);
         assert_eq!(result.summary.message_count, 2);
+        assert_eq!(result.detail.source, "codex");
+        assert_eq!(result.detail.session_id, result.session_id);
+        assert_eq!(result.detail.file_path, result.summary.file_path);
+        assert_eq!(result.detail.messages.len(), 2);
 
         let files = collect_codex_session_files(&resolve_codex_history_root(&roots));
         assert_eq!(files.len(), 1);

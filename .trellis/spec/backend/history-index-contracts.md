@@ -216,26 +216,30 @@ generation = excluded.generation;
 
 Obtain SQLite's writer lease, compare persisted generation/cursor inside that transaction, and return `applied=false` before any source/session mutation when the response is stale.
 
-## Scenario: Additive History Conversion While Target CLI Runs
+## Scenario: Additive History Conversion and Explicit Deletion While Target CLI Runs
 
 ### 1. Scope / Trigger
 
-- Trigger: changing Claude/Codex history conversion, target bundle writers, shared JSONL indexes, or runtime mutation guards.
-- Goal: creating a new converted session must remain possible while the target CLI runs without weakening protection for mutations of existing sessions.
+- Trigger: changing Claude/Codex history conversion, explicit history deletion, target bundle writers, shared JSONL indexes, or runtime mutation guards.
+- Goal: additive conversion and user-confirmed deletion must not be blocked merely because another same-source CLI process exists; backup restoration remains exclusive.
 
 ### 2. Signatures
 
-- Tauri command remains `history_convert_session(file_path, claude_config_dir, codex_config_dir, source, project_key, target_source) -> Result<HistoryConversionResult, String>`.
-- Process guard remains `is_target_tool_running(source: &str) -> bool` for destructive mutation callers.
+- Tauri command remains `history_convert_session(file_path, claude_config_dir, codex_config_dir, source, project_key, target_source) -> Result<HistoryConversionResult, String>`; the result includes both the target summary and the target detail parsed directly from the newly written file.
+- Process guard remains `is_target_tool_running(source: &str) -> bool` for backup restore and restore-plan callers.
+- Delete entry remains `history_delete_session(...)`; its internal `delete_session_tree_with_backup_root(...)` does not use the source-wide process guard.
 - Shared JSONL helper remains `append_jsonl_line(path: &Path, line: &Value) -> Result<(), String>`.
 
 ### 3. Contracts
 
 - Conversion is additive: every attempt creates a new target-native UUID and an exclusive rollout/transcript path; it never edits or replaces an active session.
+- Conversion success is self-contained: before returning, the backend parses the new target transcript and verifies that detail source, session id, and file path match the returned summary. The frontend must not depend on an immediate catalog refresh to display the result.
+- For a Claude target, the returned summary/detail `project_key` comes from the canonicalized target file's parent directory after the write. Do not return the lowercased cwd-derived key: on case-insensitive Windows filesystems an existing mixed-case Claude project directory may be reused, and later inventory reports that on-disk name.
 - A running target CLI alone must not return `history_target_tool_running` from `history_convert_session`.
 - Codex `history.jsonl` and `session_index.jsonl` records are serialized with their trailing newline and written through one append `write_all` call.
 - Codex `state_5.sqlite` registration uses SQLite locking and the bounded 15-second busy timeout. A real busy timeout, schema error, or I/O error is returned; it is never converted to success.
-- Delete, backup restore, and restore-plan paths continue to call `is_target_tool_running`; they mutate existing artifacts and remain exclusive.
+- Explicit delete does not call `is_target_tool_running`: the process scan identifies only a CLI source, not the selected session, so it cannot prove that the selected file is active. Delete still creates backups, rolls back failures, and respects the source manual-recovery lock.
+- Backup restore and restore-plan paths continue to call `is_target_tool_running`; they may overwrite an existing artifact and remain exclusive.
 - `history_source_manual_recovery_required` still blocks conversion when the target source has an unresolved recovery lock.
 
 ### 4. Validation & Error Matrix
@@ -245,21 +249,31 @@ Obtain SQLite's writer lease, compare persisted generation/cursor inside that tr
 | Target CLI is running and conversion writes a new session | Continue conversion; do not return `history_target_tool_running` |
 | Target SQLite writer remains busy past 15 seconds | Return `codex_state_register_failed` or the underlying database-open error |
 | Target source has a manual recovery lock | Return `history_source_manual_recovery_required`; write nothing |
-| Delete or restore targets a running CLI | Return `history_target_tool_running` |
+| New target transcript cannot be parsed back with matching identity | Return `history_conversion_detail_mismatch`; do not report conversion success |
+| Claude target file cannot be canonicalized or has no project parent | Return `history_conversion_target_file_unavailable` or `history_conversion_target_project_unavailable`; do not report conversion success |
+| Windows reuses an existing Claude project directory whose case differs from the cwd-derived key | Return the directory's actual on-disk name in summary/detail so `validate_session_file_ref` can reopen it |
+| User confirms deletion while any same-source CLI is running | Continue the validated backup-and-delete transaction; do not return `history_target_tool_running` |
+| Backup restore or restore-plan runs while the source CLI is active | Return `history_target_tool_running` |
 | Source or target is unsupported, identical, or a subagent root | Preserve the existing stable validation error; write nothing |
 
 ### 5. Good / Base / Bad Cases
 
 - Good: Claude converts to a fresh Codex rollout while other Codex sessions remain active; both shared index lines parse and the SQLite thread row registers.
+- Good: Codex converts to Claude under an existing `F--ws-Labway-Fee-Control` directory; the result returns that exact project key and ordinary detail reopening succeeds.
+- Good: the user deletes selected old Codex sessions while an unrelated Codex terminal is open; every selected file still goes through backup and rollback handling.
 - Base: no target CLI is running; conversion behavior and result payload are unchanged.
-- Bad: remove `is_target_tool_running` from the shared helper or destructive callers, allowing an active transcript to be deleted or restored.
+- Bad: return the lowercased cwd encoding after Windows has reused a mixed-case directory; inventory then rejects the same file with `session_file_not_indexed`.
+- Bad: apply the source-wide process guard to explicit deletion; one unrelated Codex process blocks deleting every Codex history file.
+- Bad: remove the guard from backup restore and overwrite an artifact while the source CLI is active.
 - Bad: keep the process guard at the conversion entry and reject every conversion from a machine currently using Codex.
 
 ### 6. Tests Required
 
-- Rust: Claude -> Codex and Codex -> Claude writer/parser round trips preserve the new session id and messages.
+- Rust: Claude -> Codex and Codex -> Claude writer/parser round trips preserve the new session id and messages; returned summary and detail identities match.
+- Rust: Codex -> Claude with an existing mixed-case Windows project directory returns the inventory project key, passes `validate_session_file_ref`, and rebuilds detail through the ordinary reopen path.
 - Rust: concurrent `append_jsonl_line` calls produce the expected record count and every line parses as JSON.
-- Rust/source audit: `history_convert_session` has no target-process guard, while delete, restore, and restore-plan call sites retain it.
+- Rust/source audit: conversion and explicit delete have no target-process guard; backup restore and restore-plan retain it.
+- Frontend/static regression: deleting sessions while a same-source process exists is not rejected at the backend delete boundary.
 - Run `cargo fmt -- --check`, focused conversion/append tests, `cargo test history --lib`, and `cargo check`.
 
 ### 7. Wrong vs Correct
@@ -276,6 +290,10 @@ convert_history_session(&detail, &target_source, &roots)?;
 #### Correct
 
 ```rust
-// Conversion owns a fresh target id/path; destructive callers keep the process guard.
+// Conversion owns a fresh target id/path; explicit deletion owns a backup transaction.
 let result = convert_history_session(&detail, &target_source, &roots)?;
+let deleted = delete_session_tree_with_backup_root(&file_ref, &backups_dir)?;
+
+// Backup restore still refuses to overwrite while the source CLI is active.
+let plan = build_file_restore_plan(&file_ref.path, &backups_dir, Some(&file_ref.source));
 ```
