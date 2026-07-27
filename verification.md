@@ -645,3 +645,31 @@
 - `npx tsc --noEmit`：通过。
 - `npm run build`：通过。
 - `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+
+## SSH 远程目录浏览响应优化（2026-07-27）
+
+### 根因与发现清单
+
+- 根因位于桌面端 SSH bridge 调度边界：主 bridge 的 `hookDrain` 最长等待 2 秒，但旧调度只把外部 RPC 计入忙碌状态，文件请求会误判正在长轮询的主 bridge 为空闲并排在轮询之后；逐级目录 RPC 会把该等待重复叠加。修复落在 bridge 空闲槽与文件树请求消费层，而不是增加超时、重试或修改远端 Agent。
+- 已修改 `src-tauri/src/daemon/ssh_agent_bridge.rs`：Hook 长轮询完整占用主 bridge 空闲槽；只读文件请求仅复用真正空闲的主 bridge，否则进入独立只读 lane；只读与 Git lane 改为请求驱动并保留 heartbeat。
+- 已修改 `src/stores/fileExplorerStore.ts` 与 `src/lib/sshRemoteFiles.ts`：重复展开、紧凑目录链和路径定位复用已加载的 SSH children；关闭、切换和失败路径释放远程 consumer，并用请求序号及同 consumer 释放队列隔离快速切换竞态。
+- 已复核但未修改 `commands/ssh_files.rs` 的文件 RPC、`commands/history.rs::history_remote_close` 的 consumer 释放入口、文件浏览组件调用方、远端 Agent `files.rs`/`protocol.rs`、协议版本和已发布 Agent 二进制。
+- GitNexus 本地 runner 因缺少 `tree-sitter-kotlin` 无法刷新；按规则降级到 SSH 契约、codebase-memory、`rg`、源码和测试。完成后已重建 moderate 索引，并以 `HEAD` 为基线确认工作区只涉及预期的 5 个文件。
+
+### 场景覆盖
+
+- 主 bridge 正在 Hook 长轮询、外部请求已占用、连接中或真正空闲时，文件请求分别隔离、隔离、隔离或复用；文件请求不再进入已开始的 Hook 轮询队列。
+- 独立只读和 Git lane 在有请求时立即处理，无请求时仅维持 heartbeat，不消费与其身份无关的 Hook spool；Git 串行读写语义保持不变。
+- SSH 目录首次展开仍请求远端；折叠后重开、紧凑单目录链和终端路径定位复用已经加载的 children；显式刷新仍重新读取远端，避免缓存掩盖文件变化。
+- 同项目重开、跨项目快速切换、加载中关闭和加载失败均不会让旧异步结果覆盖新项目，也不会让同 consumer 的延迟释放误关新 bridge。
+- 本地文件项目、WSL、窗口焦点、分屏、托盘和 Worktree 不经过该 SSH 文件 bridge 调度；本次行为保持不变。
+
+### 验证结果
+
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml daemon::ssh_agent_bridge::tests`：21 项通过、0 项失败。
+- `npx tsc --noEmit`：通过。
+- `npm run build`：通过，Vite 完成 6696 个模块转换。
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`：通过。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+- 全量 Rust 测试结果为 737 项通过、1 项忽略、1 项失败；失败的既有 `commands::hook_settings::tests::install_then_uninstall_pi_extension` 已单独复现，断言发生在未修改的 Pi Hook 卸载状态，与本次 SSH bridge 和文件树改动无调用关系。
+- 尚未连接真实远端目录做交互延迟对比，也未生成安装包；该项留给安装包或开发模式下的实际 SSH 冒烟测试。
