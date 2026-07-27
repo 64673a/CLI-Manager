@@ -177,7 +177,11 @@ function CollapsibleSettingsSection({
       ) : (
         <div className="p-4">{headerContent}</div>
       )}
-      {(!collapsible || open) && <Box px="md" pb="md">{children}</Box>}
+      {collapsible ? (
+        open === true && <Box px="md" pt="sm" pb="md">{children}</Box>
+      ) : (
+        <Box px="md" pb="md">{children}</Box>
+      )}
     </section>
   );
 }
@@ -653,12 +657,12 @@ export function ThemeSettingsPage() {
 
   return (
     <Stack gap="md">
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <Stack gap="md" className="min-w-0 xl:col-start-1 xl:row-start-1">
         <CollapsibleSettingsSection
           title={text("终端行为", "Terminal Behavior")}
           open={terminalSettingsSectionsExpanded.behavior}
           onToggle={() => toggleSection("behavior")}
-          className="xl:col-start-1 xl:row-start-1"
         >
           <Stack gap="md">
             <Stack gap={6}>
@@ -1053,24 +1057,14 @@ export function ThemeSettingsPage() {
           description={text("扫描并启用可在新建项目中选择的终端。", "Scan and enable terminal types shown when creating projects.")}
           open={terminalSettingsSectionsExpanded.shells}
           onToggle={() => toggleSection("shells")}
-          className="xl:col-start-1 xl:row-start-2"
         >
           {shellProfileSection}
-        </CollapsibleSettingsSection>
-
-        <CollapsibleSettingsSection
-          title={text("终端预览", "Terminal Preview")}
-          collapsible={false}
-          className="hidden self-start xl:sticky xl:top-5 xl:z-10 xl:col-start-2 xl:row-span-4 xl:row-start-1 xl:block"
-        >
-          {terminalPreview}
         </CollapsibleSettingsSection>
 
         <CollapsibleSettingsSection
           title={text("终端主题库", "Terminal Theme Library")}
           open={terminalSettingsSectionsExpanded.themes}
           onToggle={() => toggleSection("themes")}
-          className="xl:col-start-1 xl:row-start-3"
         >
           <Stack gap="md">
             <SegmentedControl<TerminalThemeLibraryMode>
@@ -1209,7 +1203,7 @@ export function ThemeSettingsPage() {
           </Stack>
         </CollapsibleSettingsSection>
 
-        <div className="min-w-0 xl:col-start-1 xl:row-start-4">
+        <div className="min-w-0">
           <CollapsibleSettingsSection
             title={text("终端背景", "Terminal Background")}
             open={terminalSettingsSectionsExpanded.background}
@@ -1218,6 +1212,15 @@ export function ThemeSettingsPage() {
           <TerminalBackgroundSection embedded />
           </CollapsibleSettingsSection>
         </div>
+        </Stack>
+
+        <CollapsibleSettingsSection
+          title={text("终端预览", "Terminal Preview")}
+          collapsible={false}
+          className="hidden self-start xl:sticky xl:top-5 xl:z-10 xl:col-start-2 xl:row-start-1 xl:block"
+        >
+          {terminalPreview}
+        </CollapsibleSettingsSection>
       </section>
     </Stack>
   );
