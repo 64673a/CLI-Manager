@@ -673,3 +673,31 @@
 - `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
 - 全量 Rust 测试结果为 737 项通过、1 项忽略、1 项失败；失败的既有 `commands::hook_settings::tests::install_then_uninstall_pi_extension` 已单独复现，断言发生在未修改的 Pi Hook 卸载状态，与本次 SSH bridge 和文件树改动无调用关系。
 - 尚未连接真实远端目录做交互延迟对比，也未生成安装包；该项留给安装包或开发模式下的实际 SSH 冒烟测试。
+
+## Windows 桌宠首次显示任务栏缩略图修复（2026-07-27）
+
+### 根因与发现清单
+
+- 根因位于 Tauri 隐藏窗口首次显示与 Windows Explorer 任务栏登记的生命周期边界：桌宠虽然在静态窗口配置中设置了 `skipTaskbar`，但部分 Windows 11 环境会在后续 `show()` 时重新登记窗口；旧显示链路没有再次应用跳过任务栏属性，因此冷启动可出现缩略图，而关闭后重开又会自愈。
+- 修复落在唯一的桌宠显示入口 `desktop_pet_window_sync`：Windows 下每次 `show()` 成功后幂等调用 `set_skip_taskbar(true)`，不通过延时、窗口样式覆写或前端重试掩盖竞态。
+- 已修改 `src-tauri/src/commands/desktop_pet.rs`、`CHANGELOG.md` 与本验证记录。
+- 已确认无需修改桌宠 React 渲染、窗口尺寸与位置、置顶策略、托盘逻辑、PTY daemon，以及 macOS/Linux 窗口行为。
+- GitNexus CLI 未建立本仓库索引，按规则降级到 codebase-memory 调用图、`rg` 与源码复核；IPC 命令没有静态 Rust 调用方，实际入口为 `useDesktopPetCoordinator` 的 Tauri invoke，影响范围限定为桌宠窗口同步路径，风险为低。
+
+### 场景覆盖
+
+- 冷启动启用桌宠、设置中关闭后重新启用、托盘运行后重新显示，均经过同一窗口同步入口并重新应用跳过任务栏属性。
+- 窗口置顶开关、保存位置与大小调整仍在显示前完成，不改变现有行为；主窗口任务栏入口不受影响。
+- `Alt+Tab` 与任务栏都依赖 Windows 原生窗口属性；本次只重新声明已有配置，不创建第二个窗口，也不改变窗口 owner。
+- macOS/Linux 由编译条件保持原显示路径；窗口焦点、分屏、WSL、Worktree 与 Hook 安装状态均不参与该属性同步。
+
+### 验证结果
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`：通过。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml commands::desktop_pet::tests`：13 项通过、0 项失败。
+- `cargo check --locked --manifest-path src-tauri/Cargo.toml`：通过。
+- `npx tsc --noEmit`：通过。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+- GitNexus `detect-changes` 因本地没有该仓库索引而不可用；降级刷新 codebase-memory moderate 索引并执行工作区变更检测，确认仅涉及 `desktop_pet_window_sync` 及预期的 CHANGELOG、验证记录。
+- `npm run tauri:build:local -- --bundles nsis`：通过，仅构建 NSIS；安装包为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`，大小 17,093,981 字节，SHA-256 为 `51956099BB6246982D1FE7E64A4B9C321A0AF795E24BB5332D1306A654B037C0`。
+- 自动化验证无法直接断言 Windows Explorer 的任务栏缩略图状态，冷启动、关闭后重开及任务栏/Alt+Tab 表现需用本安装包在受影响的 Windows 11 机器上冒烟确认。
