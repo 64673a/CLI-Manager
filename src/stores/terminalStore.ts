@@ -550,6 +550,11 @@ function normalizePathForCompare(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/g, "");
 }
 
+function normalizeRemotePathForCompare(path: string): string {
+  const normalized = path.trim().replace(/\/{2,}/g, "/").replace(/\/+$/g, "");
+  return normalized || "/";
+}
+
 function isSameTranscriptPath(a: string | null, b: string | null): boolean {
   if (!a || !b) return false;
   return normalizePathForCompare(a) === normalizePathForCompare(b);
@@ -1634,8 +1639,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       ? projectState.projects.find((item) => item.id === lockedSession.projectId)
       : undefined;
     if (!project) throw new Error("remote_handoff_project_missing");
+    const sshHandoff = lockedSession.remoteHandoff.transport === "ssh"
+      || project.environment_type === "ssh";
     if (
       lockedSession.worktreeId
+      && !sshHandoff
       && !projectState.worktrees.some((worktree) => (
         worktree.id === lockedSession.worktreeId
         && worktree.project_id === project.id
@@ -1644,23 +1652,55 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     ) {
       throw new Error("remote_handoff_worktree_missing");
     }
+    if (sshHandoff && lockedSession.worktreeId) {
+      throw new Error("handoff_ssh_worktree_unsupported");
+    }
+    if (sshHandoff && project.environment_type !== "ssh") {
+      throw new Error("remote_handoff_ssh_project_mismatch");
+    }
+    const recordedSshHostId = lockedSession.remoteHandoff.sshHostId?.trim()
+      || lockedSession.sshHostId?.trim()
+      || "";
+    if (
+      sshHandoff
+      && (!recordedSshHostId || project.ssh_host_id?.trim() !== recordedSshHostId)
+    ) {
+      throw new Error("remote_handoff_ssh_host_mismatch");
+    }
+    const recordedRemotePath = lockedSession.remoteHandoff.remotePath?.trim()
+      || lockedSession.remoteHandoff.workDir.trim()
+      || lockedSession.remotePath?.trim()
+      || "";
+    if (
+      sshHandoff
+      && (
+        !recordedRemotePath
+        || normalizeRemotePathForCompare(project.remote_path)
+          !== normalizeRemotePathForCompare(recordedRemotePath)
+      )
+    ) {
+      throw new Error("remote_handoff_ssh_path_mismatch");
+    }
 
     const os = await getOsPlatform();
-    const resolvedShell = resolveShellForPty(lockedSession.shell, true, os);
-    const shellKey = normalizeShellKey(resolvedShell) ?? null;
-    const providerProject = resolveProjectForProviderLaunch(
-      project,
-      projectState.worktrees,
-      lockedSession.worktreeId
-    );
+    let resumeProject = project;
+    let providerProject = project;
+    let codexProvider: ReturnType<typeof getCodexProviderLaunchConfig> = null;
     const recordedProviderId = lockedSession.remoteHandoff.providerId?.trim() || null;
-    let resumeProject = providerProject;
-    let codexProvider = getCodexProviderLaunchConfig(
-      lockedSession.projectId,
-      lockedSession.startupCmd,
-      lockedSession.worktreeId
-    );
-    if (recordedProviderId) {
+    if (!sshHandoff) {
+      providerProject = resolveProjectForProviderLaunch(
+        project,
+        projectState.worktrees,
+        lockedSession.worktreeId
+      );
+      resumeProject = providerProject;
+      codexProvider = getCodexProviderLaunchConfig(
+        lockedSession.projectId,
+        lockedSession.startupCmd,
+        lockedSession.worktreeId
+      );
+    }
+    if (!sshHandoff && recordedProviderId) {
       const settings = useSettingsStore.getState();
       const prepared = await invoke<CodexProviderProfileResponse>(
         "ccswitch_prepare_codex_provider",
@@ -1694,21 +1734,49 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       lockedSession.remoteHandoff.cliSessionId || lockedSession.cliSessionId,
       resumeProject
     );
-    const launchStartupCmd = prepareStartupCommandForPty(resumeCommand, shellKey);
-    const newSessionId = await terminalProcessManager.create({
-      cwd: lockedSession.remoteHandoff.workDir || lockedSession.cwd || null,
-      envVars: buildPtyEnvVars(lockedSession.envVars ?? null, resolvedShell),
-      shell: resolvedShell,
-      hookEnvEnabled: await shouldEnableHookEnv(),
-      claudeProvider: null,
-      codexProvider,
-      terminalColors: getCurrentTerminalColors(),
-      sshLaunch: null,
-    });
+    const launch: ResolvedPtyLaunch = sshHandoff
+      ? await resolvePtyLaunch({
+          projectId: project.id,
+          sshHostId: recordedSshHostId,
+          cwd: recordedRemotePath,
+          startupCmd: resumeCommand,
+          envVars: lockedSession.envVars,
+          shell: null,
+        }, os)
+      : (() : ResolvedPtyLaunch => {
+          const resolvedShell = resolveShellForPty(lockedSession.shell, true, os);
+          return {
+            shell: resolvedShell,
+            startupCmd: prepareStartupCommandForPty(
+              resumeCommand,
+              normalizeShellKey(resolvedShell) ?? null
+            ),
+            startupHandledByLaunch: false,
+            invokeArgs: {
+              cwd: lockedSession.remoteHandoff?.workDir || lockedSession.cwd || null,
+              envVars: buildPtyEnvVars(lockedSession.envVars ?? null, resolvedShell),
+              shell: resolvedShell,
+              hookEnvEnabled: false,
+              claudeProvider: null,
+              codexProvider,
+              terminalColors: getCurrentTerminalColors(),
+              sshLaunch: null,
+            },
+          };
+        })();
+    if (!sshHandoff) {
+      launch.invokeArgs.hookEnvEnabled = await shouldEnableHookEnv();
+    }
+    const newSessionId = await terminalProcessManager.create(launch.invokeArgs);
     const replacement: TerminalSession = {
       ...lockedSession,
       id: newSessionId,
-      shell: resolvedShell,
+      shell: launch.shell,
+      environmentType: launch.environmentType ?? lockedSession.environmentType,
+      sshHostId: launch.sshHostId ?? lockedSession.sshHostId,
+      remotePath: launch.remotePath ?? lockedSession.remotePath,
+      connectionState: sshHandoff ? "connecting" : lockedSession.connectionState,
+      disconnectReason: undefined,
       remoteHandoff: undefined,
       initialTerminalOutput: undefined,
       deferStartupUntilInitialOutput: false,
@@ -1717,8 +1785,13 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       const status = payload.status as SessionStatus;
       logTerminalExitStatus(replacement, payload);
       useTerminalStore.setState((current) => ({
+        sessions: applyPtyStatusToSessions(current.sessions, newSessionId, payload),
         sessionStatuses: { ...current.sessionStatuses, [newSessionId]: status },
       }));
+      persistSshConnectionStateAfterPtyStatus(newSessionId, payload);
+      if (status === "exited" || status === "error") {
+        releaseRemoteHistoryConsumer(replacement);
+      }
     }).catch(async (err) => {
       await terminalProcessManager.close(newSessionId).catch(() => {});
       throw err;
@@ -1770,11 +1843,12 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       logError("Failed to persist resumed remote handoff session", { sessionId, newSessionId, err });
     }
 
-    if (launchStartupCmd) {
+    if (launch.startupCmd && !launch.startupHandledByLaunch) {
+      const shellKey = normalizeShellKey(launch.shell) ?? null;
       setTimeout(() => {
         terminalProcessManager.write(
           newSessionId,
-          formatStartupInputForPty(launchStartupCmd, shellKey),
+          formatStartupInputForPty(launch.startupCmd as string, shellKey),
         ).catch((err) => {
           logError("Failed to resume remotely handed-off Codex session", {
             sessionId: newSessionId,

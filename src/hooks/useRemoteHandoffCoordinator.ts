@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { flushTerminalSnapshotsNow } from "../lib/sessionSnapshotPersistence";
 import {
   getRemoteHandoffEligibility,
+  getRemoteHandoffWorkDir,
+  preflightRemoteHandoff,
   REMOTE_HANDOFF_CANCEL_REQUEST_EVENT,
   REMOTE_HANDOFF_START_REQUEST_EVENT,
   type CcConnectHandoffInfo,
@@ -18,6 +20,7 @@ import { useProjectStore } from "../stores/projectStore";
 import { useRemoteHandoffStore } from "../stores/remoteHandoffStore";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useWorktreeStore } from "../stores/worktreeStore";
+import { useSshHostStore } from "../stores/sshHostStore";
 
 const HANDOFF_STATUS_POLL_MS = 2000;
 
@@ -30,6 +33,16 @@ const ERROR_TRANSLATIONS: Array<[string, TranslationKey]> = [
   ["handoff_work_dir_missing", "remoteHandoff.error.pathMissing"],
   ["handoff_work_dir_outside_project", "remoteHandoff.error.pathInvalid"],
   ["handoff_work_dir_unsupported", "remoteHandoff.error.pathUnsupported"],
+  ["handoff_ssh_worktree_unsupported", "remoteHandoff.error.sshWorktreeUnsupported"],
+  ["handoff_ssh_host_missing", "remoteHandoff.error.sshHostMissing"],
+  ["handoff_ssh_jump_host_missing", "remoteHandoff.error.sshJumpHostMissing"],
+  ["ssh_host_not_found", "remoteHandoff.error.sshHostMissing"],
+  ["ssh_credential_ref_required", "remoteHandoff.error.sshCredentialMissing"],
+  ["ssh_credential_missing", "remoteHandoff.error.sshCredentialMissing"],
+  ["ssh_config_file_not_found", "remoteHandoff.error.sshConfigurationChanged"],
+  ["ssh_config_file_invalid", "remoteHandoff.error.sshConfigurationChanged"],
+  ["handoff_ssh_interactive_auth_unsupported", "remoteHandoff.error.sshInteractiveAuthUnsupported"],
+  ["handoff_codex_backend_unavailable", "remoteHandoff.error.remoteCodexUnavailable"],
   ["handoff_platform_session_missing", "remoteHandoff.error.platformSessionMissing"],
   ["handoff_platform_user_missing", "remoteHandoff.error.platformUserMissing"],
   ["handoff_platform_disabled", "remoteHandoff.error.platformDisabled"],
@@ -39,6 +52,9 @@ const ERROR_TRANSLATIONS: Array<[string, TranslationKey]> = [
   ["remote_handoff_project_missing", "remoteHandoff.error.projectMissing"],
   ["remote_handoff_worktree_missing", "remoteHandoff.error.worktreeMissing"],
   ["remote_handoff_provider_mismatch", "remoteHandoff.error.providerMismatch"],
+  ["remote_handoff_ssh_project_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
+  ["remote_handoff_ssh_host_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
+  ["remote_handoff_ssh_path_mismatch", "remoteHandoff.error.sshConfigurationChanged"],
 ];
 
 function handoffErrorMessage(
@@ -60,6 +76,9 @@ function activeMetadata(info: CcConnectHandoffInfo): RemoteHandoffSessionState {
     providerName: info.providerName,
     platform: info.platform,
     startedAtMs: info.startedAtMs,
+    transport: info.transport,
+    sshHostId: info.sshHostId ?? undefined,
+    remotePath: info.remotePath ?? undefined,
   };
 }
 
@@ -74,7 +93,24 @@ function metadataMatches(
     && current.providerId === next.providerId
     && current.providerName === next.providerName
     && current.platform === next.platform
-    && current.startedAtMs === next.startedAtMs;
+    && current.startedAtMs === next.startedAtMs
+    && current.transport === next.transport
+    && current.sshHostId === next.sshHostId
+    && current.remotePath === next.remotePath;
+}
+
+function eligibilityTranslation(reason: ReturnType<typeof getRemoteHandoffEligibility>["reason"]): TranslationKey {
+  switch (reason) {
+    case "task_running": return "remoteHandoff.error.taskRunning";
+    case "task_state_unknown": return "remoteHandoff.error.taskStateUnknown";
+    case "missing_cli_session_id": return "remoteHandoff.error.sessionIdMissing";
+    case "another_session_handed_off": return "remoteHandoff.error.singleSessionOnly";
+    case "ssh_worktree_unsupported": return "remoteHandoff.error.sshWorktreeUnsupported";
+    case "ssh_host_missing": return "remoteHandoff.error.sshHostMissing";
+    case "ssh_interactive_auth_unsupported": return "remoteHandoff.error.sshInteractiveAuthUnsupported";
+    case "path_unsupported": return "remoteHandoff.error.pathUnsupported";
+    default: return "remoteHandoff.error.unavailable";
+  }
 }
 
 async function markLocalRecoveryFailed(sessionId: string): Promise<void> {
@@ -121,49 +157,60 @@ export function useRemoteHandoffCoordinator(appReady: boolean) {
         terminal.sessions,
         useWorktreeStore.getState().worktrees
       );
+      if (project?.environment_type === "ssh" && !useSshHostStore.getState().loaded) {
+        try {
+          await useSshHostStore.getState().fetchHosts();
+        } catch (error) {
+          logWarn("Failed to load SSH hosts for remote handoff", error);
+          toast.error(t("remoteHandoff.toast.startFailed"), {
+            description: handoffErrorMessage(error, t),
+          });
+          return;
+        }
+      }
+      const sshHost = project?.ssh_host_id
+        ? useSshHostStore.getState().hosts.find((host) => host.id === project.ssh_host_id)
+        : undefined;
       const eligibility = getRemoteHandoffEligibility({
         session,
         project,
+        sshHost,
         worktree,
         notification: terminal.tabNotifications[session.id] ?? "none",
         processStatus: terminal.sessionStatuses[session.id],
         activeHandoff: useRemoteHandoffStore.getState().status.info,
       });
-      if (!eligibility.eligible || !project || !session.cliSessionId || !session.cwd) {
+      const workDir = getRemoteHandoffWorkDir(session, project);
+      if (!eligibility.eligible || !project || !session.cliSessionId || !workDir) {
         toast.warning(t("remoteHandoff.toast.unavailable"), {
-          description: t(
-            eligibility.reason === "task_running"
-              ? "remoteHandoff.error.taskRunning"
-              : eligibility.reason === "task_state_unknown"
-                ? "remoteHandoff.error.taskStateUnknown"
-              : eligibility.reason === "missing_cli_session_id"
-                  ? "remoteHandoff.error.sessionIdMissing"
-                  : eligibility.reason === "another_session_handed_off"
-                    ? "remoteHandoff.error.singleSessionOnly"
-                    : "remoteHandoff.error.unavailable"
-          ),
+          description: t(eligibilityTranslation(eligibility.reason)),
         });
         return;
       }
 
+      const request = {
+        localSessionId: session.id,
+        cliSessionId: session.cliSessionId,
+        platform,
+        projectId: project.id,
+        worktreeId: worktree?.id ?? null,
+        workDir,
+        sessionTitle: session.title || null,
+      };
       const pending: RemoteHandoffSessionState = {
         phase: "pending",
         cliSessionId: session.cliSessionId,
         projectName: project.name,
-        workDir: session.cwd,
+        workDir,
+        transport: project.environment_type === "ssh" ? "ssh" : "local",
+        sshHostId: project.ssh_host_id ?? undefined,
+        remotePath: project.environment_type === "ssh" ? workDir : undefined,
       };
       try {
+        await preflightRemoteHandoff(request);
         await flushTerminalSnapshotsNow();
         await useTerminalStore.getState().suspendSessionForRemoteHandoff(session.id, pending);
-        const nextStatus = await useRemoteHandoffStore.getState().start({
-          localSessionId: session.id,
-          cliSessionId: session.cliSessionId,
-          platform,
-          projectId: project.id,
-          worktreeId: worktree?.id ?? null,
-          workDir: session.cwd,
-          sessionTitle: session.title || null,
-        });
+        const nextStatus = await useRemoteHandoffStore.getState().start(request);
         if (!nextStatus.active || !nextStatus.info) {
           throw new Error("remote_handoff_start_incomplete");
         }

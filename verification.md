@@ -1,3 +1,35 @@
+# SSH Codex 会话远程托管验证（2026-07-27）
+
+## 根因与发现清单
+
+- 原托管资格、后端目录校验、Codex 启动和取消后恢复均只支持桌面本地目录/进程，没有携带 SSH Host、远端路径和认证信息；本次在原 cc-connect 托管链上增加本机 OpenSSH 传输，没有修改 cc-connect 源码或全局安装。
+- 新增 `cc_connect_handoff_preflight`，在释放原 PTY 前验证消息平台上下文、SSH 配置/凭据/远端目录和 Codex app-server。SSH 托管会话数据使用本地占位目录，真实 POSIX 路径仅作为远端 transport 元数据。
+- Codex Proxy 复用结构化 SSH Config、Agent、私钥、已保存密码、跳板机、HTTP/SOCKS5/ProxyCommand 和自定义 Config；远端注入项目环境、有效 `CODEX_HOME` 与登记目录的 Git 信任配置，序列化环境不包含密码。
+- Proxy 将远端 app-server 的任务开始、审批、完成和失败事件转入现有托管 Hook 通知链，Telegram、飞书、微信和企业微信共用同一实现，不要求远端安装 Hook。
+- 取消托管通过现有 SSH PTY 解析器在原 Host/路径恢复同一 `cliSessionId`；SSH 项目或路径发生漂移时进入可见的恢复失败状态。SSH Worktree、WSL、`password_prompt` 和 `interactive` 首版明确拒绝。
+- GitNexus CLI 因 npx 包缺少 `tree-sitter-kotlin` 失败；已降级刷新 codebase-memory moderate 索引并结合 SSH/PTY/Hook 契约、源码和测试完成影响复核。资格判断与 cc-connect/Proxy 启动链风险为 HIGH/CRITICAL。
+
+## 验证结果
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`：通过。
+- `cargo check --locked --manifest-path src-tauri/Cargo.toml`：通过。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml`：本功能相关测试全部通过；全量结果为 744 项通过、1 项忽略、1 项失败。唯一失败为未修改的既有 `commands::hook_settings::tests::install_then_uninstall_pi_extension`，单独执行可稳定复现，与 SSH/cc-connect/Proxy 调用链无关。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml codex_app_server_proxy::tests --lib`：13 项通过。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml commands::cc_connect:: --lib`：57 项通过，包含跳板 Host 缺失时禁止退化为直连的回归测试。
+- `node scripts/remoteHandoff.test.mjs`：3 项通过，覆盖 SSH 资格、Host/认证/Worktree 拒绝、WSL 拒绝及本地兼容。
+- `npm run test:codex-proxy:e2e`：4 项通过。
+- `.\\node_modules\\.bin\\tsc.cmd --noEmit`：通过。
+- `npm run build`：通过，Vite 完成 6696 个模块转换。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+
+## 未覆盖与发布边界
+
+- 当前没有可用于自动化测试的真实 SSH 主机和四个平台账号组合，因此尚未执行真实手机消息 -> 远端 Codex -> 取消后本地恢复的端到端冒烟；首轮安装包测试应覆盖 Agent、私钥、已保存密码、跳板/代理和 Host Key 异常。
+- 未启动 Tauri 窗口手动切换中英文；新增文案已由 TypeScript 完整键约束和生产构建覆盖。
+- 本次未打包、未 push。
+
+---
+
 # cc-connect 首版验证
 
 日期：2026-07-15

@@ -401,6 +401,9 @@ export interface RemoteHandoffSessionState {
   providerName?: string;
   platform?: "telegram" | "feishu" | "weixin" | "wecom";
   startedAtMs?: number;
+  transport?: "local" | "ssh";
+  sshHostId?: string;
+  remotePath?: string;
 }
 
 export interface TerminalSession {

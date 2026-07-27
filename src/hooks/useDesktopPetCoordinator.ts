@@ -36,6 +36,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useTerminalStore } from "../stores/terminalStore";
 import { useWorktreeStore } from "../stores/worktreeStore";
 import { useRemoteHandoffStore } from "../stores/remoteHandoffStore";
+import { useSshHostStore } from "../stores/sshHostStore";
 
 interface UseDesktopPetCoordinatorOptions {
   appReady: boolean;
@@ -59,6 +60,8 @@ export function useDesktopPetCoordinator({
   const remoteHandoffStatus = useRemoteHandoffStore((state) => state.status);
   const remoteHandoffPlatforms = useRemoteHandoffStore((state) => state.platforms);
   const remoteHandoffBusy = useRemoteHandoffStore((state) => state.busy);
+  const sshHosts = useSshHostStore((state) => state.hosts);
+  const sshHostsLoaded = useSshHostStore((state) => state.loaded);
   const persistedSessions = useSessionStore((state) => state.sessions);
   const {
     sessions,
@@ -83,6 +86,15 @@ export function useDesktopPetCoordinator({
     && settingsLoaded
     && desktopPet.enabled
     && !(desktopPet.autoHideFullscreen && terminalFullscreen);
+
+  useEffect(() => {
+    if (!appReady || sshHostsLoaded || !projects.some((project) => project.environment_type === "ssh")) {
+      return;
+    }
+    void useSshHostStore.getState().fetchHosts().catch((error) => {
+      logWarn("Failed to load SSH hosts for desktop pet handoff", error);
+    });
+  }, [appReady, projects, sshHostsLoaded]);
 
   useEffect(() => {
     if (!petWindowVisible) return;
@@ -111,6 +123,7 @@ export function useDesktopPetCoordinator({
       ptyOutputActivityAt,
       projects,
       worktrees,
+      sshHosts,
       backgroundTasks,
       agentSessionsOnly: desktopPet.agentSessionsOnly,
       activeHandoff: remoteHandoffStatus.info,
@@ -129,6 +142,7 @@ export function useDesktopPetCoordinator({
       remoteHandoffStatus.info,
       sessions,
       sessionStatuses,
+      sshHosts,
       tabNotifications,
       tabStatusDetails,
       worktrees,

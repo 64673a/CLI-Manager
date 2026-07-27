@@ -1,6 +1,7 @@
 import type {
   Project,
   RemoteHandoffPhase,
+  SshHost,
   TerminalSession,
   WorktreeRecord,
 } from "./types";
@@ -297,6 +298,7 @@ interface DeriveDesktopPetSnapshotInput {
   ptyOutputActivityAt: Record<string, number>;
   projects: Project[];
   worktrees: WorktreeRecord[];
+  sshHosts: SshHost[];
   backgroundTasks: BackgroundPetTask[];
   agentSessionsOnly: boolean;
   activeHandoff: CcConnectHandoffInfo | null;
@@ -356,6 +358,7 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
   const now = input.now ?? Date.now();
   const projectById = new Map(input.projects.map((project) => [project.id, project]));
   const worktreeById = new Map(input.worktrees.map((worktree) => [worktree.id, worktree]));
+  const sshHostById = new Map(input.sshHosts.map((host) => [host.id, host]));
   const persistedById = new Map(input.persistedSessions.map((session) => [session.id, session]));
   const backgroundById = new Map(input.backgroundTasks.map((task) => [task.sessionId, task]));
   const allOpenPtySessions = input.sessions.filter((session) => !session.kind || session.kind === "pty");
@@ -383,6 +386,7 @@ export function deriveDesktopPetSnapshot(input: DeriveDesktopPetSnapshotInput): 
     const eligibility = getRemoteHandoffEligibility({
       session,
       project,
+      sshHost: project?.ssh_host_id ? sshHostById.get(project.ssh_host_id) : undefined,
       worktree: session.worktreeId ? worktreeById.get(session.worktreeId) ?? null : null,
       notification: status,
       processStatus: input.sessionStatuses[session.id],

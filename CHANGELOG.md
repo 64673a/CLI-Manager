@@ -2,6 +2,10 @@
 
 ## [TEMP]
 
+### 新增
+
+- **SSH Codex 会话远程托管**：已停止的 SSH Codex 会话可从桌面宠物选择 Telegram、飞书、微信或企业微信进行托管；CLI-Manager 通过本机 cc-connect 和原生 OpenSSH 在原远端目录恢复同一 `cliSessionId`，复用 SSH Config、Agent、私钥、已保存密码、跳板机与代理配置，并在取消托管后恢复为本地 SSH 终端。托管前会先验证平台会话、SSH 凭据、远端目录和 Codex app-server，远端审批、完成及失败状态继续进入现有跨平台通知链。
+
 ### 修复
 
 - **Windows 桌宠任务栏缩略图**：桌宠窗口首次显示后会重新应用跳过任务栏属性，避免部分 Windows 11 环境在冷启动时把预创建的桌宠窗口重新登记到任务栏；关闭后再开启与后续显示路径保持一致。
