@@ -87,7 +87,11 @@ export function GitDiffViewer({
 export function DiffViewerModal({ open, onClose, ...viewerProps }: DiffViewerModalProps) {
   const { t } = useI18n();
   return (
-    <GitDiffDialogFrame open={open} onClose={onClose} ariaLabel={t("git.diff.reviewDialog")}>
+    <GitDiffDialogFrame
+      open={open}
+      onClose={onClose}
+      ariaLabel={t("git.diff.reviewDialogNamed", { fileName: viewerProps.fileName })}
+    >
       <GitDiffViewer {...viewerProps} onClose={onClose} closeOnRevert />
     </GitDiffDialogFrame>
   );

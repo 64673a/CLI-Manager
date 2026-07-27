@@ -17,6 +17,7 @@ export function GitDiffHeader({
   const { t } = useI18n();
   return (
     <div
+      data-git-diff-header
       className="flex items-center justify-between border-b px-4 py-3"
       style={{
         backgroundColor: "var(--surface-container-low)",

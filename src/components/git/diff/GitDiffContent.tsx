@@ -1,10 +1,11 @@
-import { lazy, Suspense } from "react";
-import { Decoration, Diff, Hunk } from "react-diff-view";
+import { lazy, Suspense, useCallback, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { Decoration, Diff, Hunk, type ChangeEventArgs } from "react-diff-view";
 import { Undo2 } from "../../icons";
 import { useI18n } from "../../../lib/i18n";
 import type { GitDiffViewMode } from "../../../stores/settingsStore";
 import { TERMINAL_DIFF_TABLE_STYLE } from "./theme";
 import type { GitDiffController } from "./types";
+import { GitDiffGutter } from "./GitDiffGutter";
 
 const MonacoDiffFallback = lazy(() =>
   import("../MonacoDiffFallback").then((module) => ({ default: module.MonacoDiffFallback })),
@@ -30,18 +31,47 @@ export function GitDiffContent({
     error,
     parsed,
     selectedKeys,
+    selectedKeySet,
     reverting,
     canRevertHunks,
     canRevertLines,
-    toggleSelectedChange,
+    selectChange,
+    extendSelectionFromKeyboard,
     revertHunk,
     activeHunkIndex,
     goToHunk,
     registerHunkAnchor,
   } = controller;
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const focusChange = useCallback((key: string) => {
+    const buttons = contentRef.current?.querySelectorAll<HTMLButtonElement>(
+      "[data-git-diff-change-key]",
+    );
+    [...buttons ?? []].find((button) => button.dataset.gitDiffChangeKey === key)?.focus();
+  }, []);
+  const handleGutterKeyDown = useCallback((
+    args: ChangeEventArgs,
+    event: KeyboardEvent<HTMLElement>,
+  ) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectChange(args, false);
+      return;
+    }
+    if (!event.shiftKey || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    const direction = event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1;
+    const nextKey = extendSelectionFromKeyboard(args, direction);
+    if (nextKey) focusChange(nextKey);
+  }, [extendSelectionFromKeyboard, focusChange, selectChange]);
+  const handleGutterClick = useCallback((args: ChangeEventArgs, event: MouseEvent<HTMLElement>) => {
+    selectChange(args, event.shiftKey);
+  }, [selectChange]);
 
   return (
-    <div className="flex-1 overflow-auto p-4" style={{ backgroundColor: "var(--surface)" }}>
+    <div ref={contentRef} className="flex-1 overflow-auto p-4" style={{ backgroundColor: "var(--surface)" }}>
       {loading && (
         <div className="flex h-full items-center justify-center">
           <div className="flex flex-col items-center gap-3">
@@ -73,7 +103,18 @@ export function GitDiffContent({
             hunks={parsed.file.hunks}
             tokens={parsed.tokens}
             selectedChanges={selectedKeys}
-            gutterEvents={canRevertLines ? { onClick: toggleSelectedChange } : undefined}
+            renderGutter={(options) => (
+              <GitDiffGutter
+                options={options}
+                selectedKeys={selectedKeySet}
+                interactive={canRevertLines}
+                t={t}
+              />
+            )}
+            gutterEvents={canRevertLines ? {
+              onClick: handleGutterClick,
+              onKeyDown: handleGutterKeyDown,
+            } : undefined}
           >
             {(hunks) => hunks.flatMap((hunk, index) => [
               <Decoration key={`deco-${index}-${hunk.content}`}>

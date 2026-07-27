@@ -64,6 +64,7 @@ export function GitDiffToolbar({
 
   return (
     <div
+      data-git-diff-toolbar
       className="flex min-h-12 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-3 py-2"
       style={{
         backgroundColor: "var(--surface-container-low)",

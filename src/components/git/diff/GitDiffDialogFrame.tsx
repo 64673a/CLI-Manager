@@ -1,12 +1,15 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { Portal } from "../../ui/Portal";
+import { useRef, type ReactNode } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "../../ui/dialog";
 
 interface GitDiffDialogFrameProps {
   open: boolean;
   onClose: () => void;
   ariaLabel: string;
   children: ReactNode;
-  focusOnOpen?: boolean;
 }
 
 export function GitDiffDialogFrame({
@@ -14,49 +17,45 @@ export function GitDiffDialogFrame({
   onClose,
   ariaLabel,
   children,
-  focusOnOpen = true,
 }: GitDiffDialogFrameProps) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (open && focusOnOpen) dialogRef.current?.focus();
-  }, [focusOnOpen, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.isComposing) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, open]);
-
-  if (!open) return null;
   return (
-    <Portal>
-      <div
-        className="fixed inset-0 flex items-center justify-center bg-black/60 p-2 sm:p-4"
-        style={{ zIndex: 100 }}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) onClose();
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        ref={contentRef}
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="h-[85vh] w-[calc(100vw-1rem)] max-w-6xl overflow-hidden rounded-lg border p-0 shadow-2xl sm:w-[calc(100vw-2rem)]"
+        overlayClassName="z-[100] bg-black/60"
+        style={{
+          zIndex: 101,
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }}
+        onOpenAutoFocus={(event) => {
+          previousFocusRef.current = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+          event.preventDefault();
+          const firstControl = contentRef.current?.querySelector<HTMLElement>(
+            "[data-git-diff-toolbar] button:not(:disabled), [data-git-diff-header] button:not(:disabled)",
+          );
+          (firstControl ?? contentRef.current)?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
+          previousFocusRef.current = null;
+        }}
+        onEscapeKeyDown={(event) => {
+          if (event.isComposing) event.preventDefault();
         }}
       >
-        <div
-          ref={dialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label={ariaLabel}
-          tabIndex={-1}
-          className="ui-focus-ring h-[85vh] w-full max-w-6xl overflow-hidden rounded-lg border shadow-2xl"
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {children}
-        </div>
-      </div>
-    </Portal>
+        <DialogTitle className="sr-only">{ariaLabel}</DialogTitle>
+        {children}
+      </DialogContent>
+    </Dialog>
   );
 }

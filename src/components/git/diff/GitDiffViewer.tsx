@@ -48,6 +48,7 @@ export function GitDiffViewer({
     dataSource,
     onReverted: handleReverted,
     initialHunkPlacement: review?.initialHunkPlacement,
+    viewMode,
   });
   const requestDiscard = useCallback(() => {
     if (closeOnRevert) onClose?.();
@@ -83,7 +84,6 @@ export function GitDiffViewer({
       data-theme-mode={resolvedTheme}
       style={useTerminalTheme ? TERMINAL_DIFF_ROOT_STYLE : DEFAULT_DIFF_ROOT_STYLE}
       tabIndex={review ? 0 : undefined}
-      autoFocus={Boolean(review)}
       onKeyDown={handleKeyDown}
     >
       {review && onViewModeChange ? (

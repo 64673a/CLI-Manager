@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getChangeKey, parseDiff, tokenize } from "react-diff-view";
-import type { ChangeData } from "react-diff-view";
 import { toast } from "sonner";
 import { debugConsoleWarn } from "../../../lib/debugConsole";
 import { useI18n } from "../../../lib/i18n";
@@ -13,12 +12,15 @@ import type {
   ParsedGitDiff,
 } from "./types";
 import type { GitDiffHunkPlacement } from "./reviewNavigation";
+import type { GitDiffViewMode } from "../../../stores/settingsStore";
+import { useGitDiffSelection } from "./gitDiffSelection";
 
 interface UseGitDiffControllerOptions {
   target: GitDiffTarget;
   dataSource: GitDiffDataSource;
   onReverted?: () => void;
   initialHunkPlacement?: GitDiffHunkPlacement;
+  viewMode: GitDiffViewMode;
 }
 
 function parseGitDiff(diffText: string, fileName: string): ParsedGitDiff | null {
@@ -45,13 +47,15 @@ function parseGitDiff(diffText: string, fileName: string): ParsedGitDiff | null 
   }
 }
 
-function selectedLines(parsed: ParsedGitDiff | null, selectedKeys: string[]): GitDiffSelectedLine[] {
-  if (!parsed || selectedKeys.length === 0) return [];
-  const keys = new Set(selectedKeys);
+function selectedLines(
+  parsed: ParsedGitDiff | null,
+  selectedKeys: ReadonlySet<string>,
+): GitDiffSelectedLine[] {
+  if (!parsed || selectedKeys.size === 0) return [];
   const lines: GitDiffSelectedLine[] = [];
   for (const hunk of parsed.file.hunks) {
     for (const change of hunk.changes) {
-      if (change.type === "normal" || !keys.has(getChangeKey(change))) continue;
+      if (change.type === "normal" || !selectedKeys.has(getChangeKey(change))) continue;
       lines.push({
         side: change.type === "insert" ? "new" : "old",
         lineNumber: change.lineNumber,
@@ -66,13 +70,13 @@ export function useGitDiffController({
   dataSource,
   onReverted,
   initialHunkPlacement = "first",
+  viewMode,
 }: UseGitDiffControllerOptions): GitDiffController {
   const { t } = useI18n();
   const [diffText, setDiffText] = useState("");
   const [loading, setLoading] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [activeHunkIndex, setActiveHunkIndex] = useState(0);
   const [loadRevision, setLoadRevision] = useState(0);
   const [payloadAllowsPartialRevert, setPayloadAllowsPartialRevert] = useState(false);
@@ -87,9 +91,15 @@ export function useGitDiffController({
     target.projectPath,
     target.status,
   ]);
+  const parsed = useMemo(() => parseGitDiff(diffText, target.fileName), [diffText, target.fileName]);
+  const selection = useGitDiffSelection(
+    parsed?.file.hunks,
+    viewMode,
+    diffText,
+  );
 
   useEffect(() => {
-    setSelectedKeys([]);
+    selection.clearSelection();
     setError(null);
     setPayloadAllowsPartialRevert(false);
 
@@ -132,9 +142,8 @@ export function useGitDiffController({
     return () => {
       cancelled = true;
     };
-  }, [liveLoader, loadRevision, snapshotContent, stableTarget, t]);
+  }, [liveLoader, loadRevision, selection.clearSelection, snapshotContent, stableTarget, t]);
 
-  const parsed = useMemo(() => parseGitDiff(diffText, target.fileName), [diffText, target.fileName]);
   const hunkCount = parsed?.file.hunks.length ?? 0;
   const activeHunkNewStart = parsed?.file.hunks[activeHunkIndex]?.newStart;
   const trackedFile = target.status !== "U" && target.status !== "??";
@@ -149,15 +158,6 @@ export function useGitDiffController({
     && !payloadAllowsPartialRevert
     && parsed !== null;
 
-  const toggleSelectedChange = useCallback(({ change }: { change: ChangeData | null }) => {
-    if (!change || change.type === "normal") return;
-    const key = getChangeKey(change);
-    setSelectedKeys((current) => current.includes(key)
-      ? current.filter((candidate) => candidate !== key)
-      : [...current, key]);
-  }, []);
-
-  const clearSelection = useCallback(() => setSelectedKeys([]), []);
   const registerHunkAnchor = useCallback((hunkIndex: number, element: HTMLElement | null) => {
     if (element) hunkAnchorsRef.current.set(hunkIndex, element);
     else hunkAnchorsRef.current.delete(hunkIndex);
@@ -188,7 +188,7 @@ export function useGitDiffController({
 
   const revertSelectedLines = useCallback(async () => {
     if (!canRevertLines || !mutations?.revertLines) return;
-    const lines = selectedLines(parsed, selectedKeys);
+    const lines = selectedLines(parsed, selection.selectedKeySet);
     if (lines.length === 0) return;
     setReverting(true);
     try {
@@ -200,7 +200,7 @@ export function useGitDiffController({
     } finally {
       setReverting(false);
     }
-  }, [canRevertLines, diffText, mutations, onReverted, parsed, selectedKeys, stableTarget, t]);
+  }, [canRevertLines, diffText, mutations, onReverted, parsed, selection.selectedKeySet, stableTarget, t]);
 
   useEffect(() => {
     setActiveHunkIndex(initialHunkPlacement === "last" && hunkCount > 0 ? hunkCount - 1 : 0);
@@ -223,7 +223,8 @@ export function useGitDiffController({
     reverting,
     error,
     parsed,
-    selectedKeys,
+    selectedKeys: selection.selectedKeys,
+    selectedKeySet: selection.selectedKeySet,
     canDiscardFile,
     canRevertHunks,
     canRevertLines,
@@ -231,8 +232,11 @@ export function useGitDiffController({
     activeHunkIndex,
     hunkCount,
     activeHunkNewStart,
-    toggleSelectedChange,
-    clearSelection,
+    selectChange: ({ change }, extend) => selection.selectChange(change, extend),
+    extendSelectionFromKeyboard: ({ change }, direction) => (
+      selection.extendSelectionFromKeyboard(change, direction)
+    ),
+    clearSelection: selection.clearSelection,
     goToHunk,
     registerHunkAnchor,
     requestDiscard,

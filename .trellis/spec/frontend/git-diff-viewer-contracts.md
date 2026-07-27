@@ -227,6 +227,55 @@ await lease.transport.discardFile(tab.repositoryId, tab.filePath, tab.status);
 await useGitStore.getState().refreshIfContext(lease.contextKey);
 ```
 
+## Interaction And Accessibility
+
+### 1. Scope / Trigger
+
+- Applies to selectable insert/delete gutters in the shared live Diff viewer and to the modal Dialog host.
+- Snapshot Diff remains read-only; pinned Diff uses the same selection semantics without adding a second Dialog.
+
+### 2. Signatures
+
+```ts
+interface GitDiffSelectionState {
+  selectedKeys: ReadonlySet<string>;
+  anchors: Partial<Record<"old" | "new" | "unified", GitDiffSelectionAnchor>>;
+}
+
+applyGitDiffSelection(state, { target, order, scope, extend }): GitDiffSelectionState;
+findAdjacentGitDiffChange(order, currentKey, side, direction): GitDiffSelectableChange | null;
+```
+
+### 3. Contracts
+
+- Selection order comes from parsed Hunk changes, never DOM row numbers. Normal lines are absent from the selectable order.
+- Split mode owns independent old/new anchors. Unified mode owns one anchor and resets to the current line when Shift selection crosses sides.
+- Click and Enter/Space toggle one insert/delete. Shift+click and Shift+Arrow extend across the same side's visible change order.
+- A Diff content, target, generation-option, or view-mode identity change clears selection and anchors.
+- `canRevertLines` gates pointer handlers, keyboard handlers, focusable gutters, and Controller mutation execution.
+- Selected state uses background, inset border, a visible check mark, `aria-pressed`, and a polite live count. Insert/delete keep visible `+`/`-` markers.
+- Modal hosts use the shared Radix Dialog primitive for modal semantics, focus trapping, top-layer Escape, and focus restoration. IME-composing Escape is ignored.
+- Dialog accessible names contain the active file name. Opening focuses the first enabled toolbar/header command.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Normal line gutter | Not focusable or selectable |
+| Shift range contains normal/opposite-side lines | Select only same-side insert/delete entries |
+| Split side has no anchor | Select current line and establish only that side's anchor |
+| Unified Shift target changes side | Clear the previous range and select the target only |
+| Non-UTF-8, non-exact, untracked, or backend-disabled payload | No interactive gutter; partial mutation remains guarded |
+| Escape while IME is composing | Keep the Dialog open |
+| Nested confirmation Dialog is open | Only Radix's top dismissable layer handles Escape |
+
+### 5. Tests Required
+
+- Unit-test toggle, split anchors, unified cross-side reset, same-side range filtering, and keyboard adjacency.
+- Assert the Dialog has Radix autofocus/restore hooks and no `window` key listener.
+- Assert focusable gutters expose marker, check, and pressed semantics; selection count uses `aria-live`.
+- Run shared Viewer architecture, navigation, generation-option, settings, and pinned-editor regressions.
+
 ## Verification
 
 Run:
@@ -237,4 +286,5 @@ node --test scripts/gitDiffViewerArchitecture.test.mjs scripts/gitStoreRemote.te
 node --test scripts/gitDiffReviewNavigation.test.mjs scripts/gitDiffSettings.test.mjs
 node --test scripts/gitTransportLease.test.mjs scripts/gitDiffWorkspace.test.mjs scripts/gitDiffEditorPin.test.mjs
 node --test scripts/gitDiffGenerationOptions.test.mjs
+node --test scripts/gitDiffInteractionA11y.test.mjs
 ```

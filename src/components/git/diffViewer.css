@@ -16,6 +16,8 @@
   --git-diff-delete-bg: rgba(242, 94, 94, 0.12);
   --git-diff-delete-gutter-bg: rgba(242, 94, 94, 0.18);
   --git-diff-delete-decoration: rgba(242, 94, 94, 0.30);
+  --git-diff-selected-bg: rgba(245, 185, 66, 0.20);
+  --git-diff-selected-border: #f5b942;
   --git-token-comment: #6a6a6a;
   --git-token-punctuation: #9aa0a6;
   --git-token-keyword: #c792ea;
@@ -42,6 +44,8 @@
   --git-diff-delete-bg: rgba(220, 38, 38, 0.10);
   --git-diff-delete-gutter-bg: rgba(220, 38, 38, 0.14);
   --git-diff-delete-decoration: rgba(220, 38, 38, 0.20);
+  --git-diff-selected-bg: rgba(180, 83, 9, 0.14);
+  --git-diff-selected-border: #92400e;
   --git-token-comment: #6b7280;
   --git-token-punctuation: #475569;
   --git-token-keyword: #7c3aed;
@@ -61,10 +65,58 @@
 }
 
 .diff-viewer-container .diff-gutter {
-  min-width: 50px;
+  width: 62px;
+  min-width: 62px;
   user-select: none;
   background-color: var(--git-diff-gutter-bg);
   color: var(--git-diff-muted);
+}
+
+.diff-viewer-container .git-diff-gutter-button {
+  display: inline-flex;
+  min-height: 24px;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.diff-viewer-container .git-diff-gutter-marker {
+  width: 8px;
+  flex: 0 0 8px;
+  color: var(--git-diff-text);
+  font-weight: 700;
+  text-align: center;
+}
+
+.diff-viewer-container .git-diff-gutter-line {
+  min-width: 18px;
+  text-align: right;
+}
+
+.diff-viewer-container .git-diff-gutter-check-slot {
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.diff-viewer-container .git-diff-gutter-check {
+  stroke-width: 3;
+}
+
+.diff-viewer-container .git-diff-gutter-button:focus-visible {
+  outline: 2px solid var(--interactive-focus-ring);
+  outline-offset: -2px;
 }
 
 .diff-viewer-container .diff-gutter-insert {
@@ -86,6 +138,18 @@
 
 .diff-viewer-container .diff-code-delete {
   background-color: var(--git-diff-delete-bg);
+}
+
+.diff-viewer-container .diff-gutter-selected,
+.diff-viewer-container .diff-code-selected {
+  background-color: var(--git-diff-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--git-diff-selected-border);
+}
+
+.diff-viewer-container .diff-gutter-selected {
+  box-shadow:
+    inset 3px 0 0 var(--git-diff-selected-border),
+    inset 0 0 0 1px var(--git-diff-selected-border);
 }
 
 .diff-viewer-container .diff-hunk-header {

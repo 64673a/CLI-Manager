@@ -1,4 +1,4 @@
-import type { ChangeData, FileData, HunkTokens } from "react-diff-view";
+import type { ChangeEventArgs, FileData, HunkTokens } from "react-diff-view";
 import type { GitFileDiffPayload } from "../../../lib/gitTransport";
 import type { GitDiffHunkPlacement } from "./reviewNavigation";
 
@@ -70,6 +70,7 @@ export interface GitDiffController {
   error: string | null;
   parsed: ParsedGitDiff | null;
   selectedKeys: string[];
+  selectedKeySet: ReadonlySet<string>;
   canDiscardFile: boolean;
   canRevertHunks: boolean;
   canRevertLines: boolean;
@@ -77,7 +78,8 @@ export interface GitDiffController {
   activeHunkIndex: number;
   hunkCount: number;
   activeHunkNewStart?: number;
-  toggleSelectedChange: (args: { change: ChangeData | null }) => void;
+  selectChange: (args: ChangeEventArgs, extend: boolean) => void;
+  extendSelectionFromKeyboard: (args: ChangeEventArgs, direction: -1 | 1) => string | null;
   clearSelection: () => void;
   goToHunk: (hunkIndex: number) => void;
   registerHunkAnchor: (hunkIndex: number, element: HTMLElement | null) => void;

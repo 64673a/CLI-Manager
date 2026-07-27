@@ -135,8 +135,9 @@ export function GitDiffReviewDialog({
     <GitDiffDialogFrame
       open={open}
       onClose={onClose}
-      ariaLabel={t("git.diff.reviewDialog")}
-      focusOnOpen={false}
+      ariaLabel={t("git.diff.reviewDialogNamed", {
+        fileName: activeTarget?.fileName ?? initialFilePath,
+      })}
     >
       {activeTarget && (
         <GitDiffViewer
