@@ -63,7 +63,20 @@ function eligibility(overrides = {}) {
 
 test("stopped SSH Codex sessions with unattended authentication can be handed off", () => {
   assert.deepEqual(eligibility(), { eligible: true, reason: null });
+  assert.deepEqual(eligibility({ notification: "none", processStatus: "running" }), {
+    eligible: true,
+    reason: null,
+  });
   assert.equal(handoff.getRemoteHandoffWorkDir(baseSession, sshProject), "/srv/project");
+});
+
+test("SSH sessions still reject known running states before backend preflight", () => {
+  for (const notification of ["running", "attention"]) {
+    assert.deepEqual(eligibility({ notification, processStatus: "running" }), {
+      eligible: false,
+      reason: "task_running",
+    });
+  }
 });
 
 test("SSH handoff fails closed for missing hosts, interactive auth, and Worktrees", () => {
@@ -100,4 +113,11 @@ test("WSL remains unsupported while local Codex handoff behavior is preserved", 
     project: localProject,
     sshHost: undefined,
   }), { eligible: true, reason: null });
+  assert.deepEqual(eligibility({
+    session: localSession,
+    project: localProject,
+    sshHost: undefined,
+    notification: "none",
+    processStatus: "running",
+  }), { eligible: false, reason: "task_state_unknown" });
 });

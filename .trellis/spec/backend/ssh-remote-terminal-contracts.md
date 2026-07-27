@@ -189,7 +189,7 @@ pub struct SshLaunchPlan {
 
 - SSH handoff is Codex-only and requires an existing `cliSessionId`, a stopped task, a registered SSH project, and a matching host profile. SSH Worktrees and WSL sessions remain unsupported.
 - Handoff authentication must be unattended: SSH Config, Agent, identity file, or `credential_ref`. `password_prompt` and `interactive` must fail before the desktop PTY is suspended.
-- Run `cc_connect_handoff_preflight` before releasing the desktop PTY. It must validate the selected platform conversation, cc-connect version, host/jump/proxy/config references, saved credential, remote directory, and remote Codex app-server.
+- Run `cc_connect_handoff_preflight` before releasing the desktop PTY. It must validate the selected platform conversation, cc-connect version, host/jump/proxy/config references, saved credential, remote directory, and remote Codex app-server startup without loading or resuming the selected thread. An SSH session displayed as idle may enter preflight when Hook state is unavailable; known `running` or `attention` state still blocks it. The managed proxy continues to reject fresh threads and Session ID drift when cc-connect takes ownership.
 - cc-connect keeps its session files in a deterministic local placeholder under the CLI-Manager data directory. The remote POSIX path is transport metadata and must never be passed to local filesystem APIs.
 - The managed Codex proxy launches OpenSSH with the same validated transport settings as the SSH terminal, changes to the registered remote directory, exports the project environment plus effective `CODEX_HOME`, injects a scoped `safe.directory`, and starts remote `codex app-server` over stdio.
 - The serialized launch environment may contain only the credential reference. Password values remain in the local credential store and are delivered through the one-shot AskPass broker.
@@ -244,6 +244,7 @@ pub struct SshLaunchPlan {
 | SSH handoff uses `password_prompt` or `interactive` | Reject with `handoff_ssh_interactive_auth_unsupported` before suspending the desktop session. |
 | SSH handoff saved credential is missing | Reject with `ssh_credential_missing`; never fall back to an interactive prompt. |
 | SSH handoff Host, jump Host, Config file, remote path, or Codex probe is invalid | Preflight fails and the original desktop PTY remains owned locally. |
+| SSH handoff Hook state is unavailable | Allow only the desktop pet's idle candidate to reach infrastructure preflight; do not inspect or resume the thread through a second app-server while the desktop Codex process is still alive. Known running/attention state remains blocked, and handoff failures restore local ownership. |
 | SSH handoff receives a fresh thread or another Session ID | Proxy returns a JSON-RPC error and does not silently create or switch sessions. |
 | SSH handoff is cancelled after project Host/path changes | Keep `recovery_failed` state and require the user to restore the original registration before retrying. |
 
@@ -296,7 +297,7 @@ pub struct SshLaunchPlan {
 - Assert terminal Git panel path resolution uses `remote_path` for SSH even when `session.cwd == ""`; initial file/Git loading renders `common.loading`; visible-file refresh passes the remote context into `loadProjectFile`.
 - Assert changing an SSH project's Host or `remote_path` while the file panel is open clears the previous tree, rebuilds `SshRemoteFileContext`, and discards success/failure from the old async load; local/WSL Worktree path comparison remains unchanged.
 - Assert export/import preserves portable host fields and the project host binding, while omitting all secrets and machine-local paths.
-- Assert handoff eligibility allows stopped SSH Codex sessions with unattended authentication and rejects WSL, SSH Worktrees, missing Hosts, interactive authentication, running tasks, and missing Session IDs.
+- Assert handoff eligibility allows SSH Codex sessions displayed as idle with unavailable Hook state to reach infrastructure preflight, while still rejecting known running states, WSL, SSH Worktrees, missing Hosts, interactive authentication, and missing Session IDs. Assert preflight never loads or resumes the live thread.
 - Assert SSH handoff launch serialization contains the credential reference but no password, preserves proxy/jump/config settings, safely quotes the remote path/environment, and injects exactly one scoped Git `safe.directory` entry.
 - Assert the Codex proxy rewrites the SSH resume cwd, rejects fresh-thread/session drift, forwards protocol lines unchanged otherwise, and maps turn/approval/completion/failure events into the existing handoff notifier.
 - Assert cancellation recreates the SSH PTY through the structured launch resolver and refuses recovery after Host or remote-path drift.

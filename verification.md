@@ -2,6 +2,8 @@
 
 ## 根因与发现清单
 
+- 桌面宠物把 SSH Codex 会话显示为“空闲”时，资格判断仍将缺少远端 Hook 的 `none` 状态解释为“状态未知”，因此按钮始终禁用；本次只对 SSH 放行该候选状态，已知 `running` / `attention`、本地未知状态和 WSL 行为保持不变。
+- 实测两个独立 Codex app-server 不能权威读取对方进程中的活动状态：第二个进程会返回 `idle` / `notLoaded`，提前 `thread/resume` 还可能把未结束 Turn 解释为中断。因此预检只验证 SSH 与 app-server 基础链路，不加载或恢复仍由桌面 PTY 持有的线程；已知运行态继续由现有状态链阻止，托管失败走现有本地恢复链。
 - 原托管资格、后端目录校验、Codex 启动和取消后恢复均只支持桌面本地目录/进程，没有携带 SSH Host、远端路径和认证信息；本次在原 cc-connect 托管链上增加本机 OpenSSH 传输，没有修改 cc-connect 源码或全局安装。
 - 新增 `cc_connect_handoff_preflight`，在释放原 PTY 前验证消息平台上下文、SSH 配置/凭据/远端目录和 Codex app-server。SSH 托管会话数据使用本地占位目录，真实 POSIX 路径仅作为远端 transport 元数据。
 - Codex Proxy 复用结构化 SSH Config、Agent、私钥、已保存密码、跳板机、HTTP/SOCKS5/ProxyCommand 和自定义 Config；远端注入项目环境、有效 `CODEX_HOME` 与登记目录的 Git 信任配置，序列化环境不包含密码。
@@ -16,7 +18,7 @@
 - `cargo test --locked --manifest-path src-tauri/Cargo.toml`：本功能相关测试全部通过；全量结果为 744 项通过、1 项忽略、1 项失败。唯一失败为未修改的既有 `commands::hook_settings::tests::install_then_uninstall_pi_extension`，单独执行可稳定复现，与 SSH/cc-connect/Proxy 调用链无关。
 - `cargo test --locked --manifest-path src-tauri/Cargo.toml codex_app_server_proxy::tests --lib`：13 项通过。
 - `cargo test --locked --manifest-path src-tauri/Cargo.toml commands::cc_connect:: --lib`：57 项通过，包含跳板 Host 缺失时禁止退化为直连的回归测试。
-- `node scripts/remoteHandoff.test.mjs`：3 项通过，覆盖 SSH 资格、Host/认证/Worktree 拒绝、WSL 拒绝及本地兼容。
+- `node scripts/remoteHandoff.test.mjs`：4 项通过，覆盖 SSH 无 Hook 空闲候选、已知运行态拒绝、Host/认证/Worktree 拒绝、WSL 拒绝及本地兼容。
 - `npm run test:codex-proxy:e2e`：4 项通过。
 - `.\\node_modules\\.bin\\tsc.cmd --noEmit`：通过。
 - `npm run build`：通过，Vite 完成 6696 个模块转换。
@@ -26,7 +28,7 @@
 
 - 当前没有可用于自动化测试的真实 SSH 主机和四个平台账号组合，因此尚未执行真实手机消息 -> 远端 Codex -> 取消后本地恢复的端到端冒烟；首轮安装包测试应覆盖 Agent、私钥、已保存密码、跳板/代理和 Host Key 异常。
 - 未启动 Tauri 窗口手动切换中英文；新增文案已由 TypeScript 完整键约束和生产构建覆盖。
-- 本次未打包、未 push。
+- `npm run tauri:build:local -- --bundles nsis`：通过，仅构建 NSIS；产物为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`。本次未复制安装包、未停止用户服务、未 push。
 
 ---
 

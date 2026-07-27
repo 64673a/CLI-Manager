@@ -750,6 +750,8 @@ impl CcConnectManager {
                 format!("Codex interactive approval backend is unavailable: {err}")
             })?;
         }
+        // A second app-server cannot authoritatively inspect a thread still owned by
+        // the desktop Codex process, and resuming it here can interrupt that process.
         match prepare_remote_codex_launch(&target.profile, &target.project)? {
             Some(launch) => probe_remote_codex_app_server(&launch)
                 .map_err(|err| format!("handoff_codex_backend_unavailable: {err}")),
