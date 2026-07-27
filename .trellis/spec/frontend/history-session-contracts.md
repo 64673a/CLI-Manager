@@ -237,6 +237,7 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 ### 2. Signatures
 
 - Project candidates: `findHistoryProjects(session, projects): Project[]`.
+- Source-agnostic directory candidates: `findLocalHistoryCwdProjects(session, projects): Project[]`.
 - Command builder: `appendResumeCliArgs(baseCommand, source, project): string`.
 - Terminal creation keeps the existing `terminalStore.createSession(...)` contract.
 
@@ -247,14 +248,16 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 - One candidate resumes directly; multiple candidates require explicit selection; cancel creates no terminal.
 - The selected project supplies `cli_args`, provider overrides, environment variables, shell, and Worktree overrides.
 - Existing session-selection fragments in project `cli_args` must be removed before the selected history session's resume command is built; ordinary CLI arguments and Provider overrides remain in effect.
-- Zero matching candidates must show all maintained projects plus a localized `Use New Window` option instead of stopping with an error.
+- When no source-compatible project exists but the history `cwd` exactly matches one local/WSL maintained project, resume immediately with `Use New Window` semantics. The matched directory is identity evidence only: do not inherit that other CLI's project id, CLI arguments, environment variables, provider overrides, or Agent metadata. Its Shell type may be reused only to preserve the local/WSL runtime boundary.
+- Otherwise, zero matching candidates must show all maintained projects plus a localized `Use New Window` option instead of stopping with an error. Duplicate exact-`cwd` projects still require explicit selection.
 - `Use New Window` creates an unscoped internal terminal with the resolved history working directory as PTY `cwd`, then runs the bare resume command without project CLI arguments.
 - If no working directory can be resolved, stop with a localized error and create no terminal.
 
 ### 4. Validation & Error Matrix
 
 - Invalid session ID or unsupported source -> localized error, no terminal.
-- Zero compatible project candidates -> show all projects plus `Use New Window`; cancel -> no terminal.
+- Zero compatible project candidates + one exact local/WSL `cwd` project -> resume directly with the bare source command and no project launch configuration.
+- Zero compatible project candidates + zero/multiple exact `cwd` projects -> show all projects plus `Use New Window`; cancel -> no terminal.
 - `Use New Window` + valid history working directory -> create an unscoped terminal in that directory, then run the resume command.
 - `Use New Window` + missing history working directory -> localized error, no terminal.
 - One compatible candidate -> create the terminal with its launch configuration.
@@ -264,6 +267,7 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 ### 5. Good/Base/Bad Cases
 
 - Good: two Claude project records match one history directory; the user selects one and its `cli_args` appear after `claude --resume <id>`.
+- Good: a Claude session converted to Codex has only one Claude project at the same `cwd`; Codex resumes directly in that directory without receiving Claude launch configuration.
 - Base: one Codex project matches exactly and resumes without an extra prompt.
 - Bad: project lookup uses `find()` and silently chooses the first duplicate.
 - Bad: zero matching projects immediately produce an error without offering a manual project choice.
@@ -273,6 +277,7 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 
 - Run `npx tsc --noEmit`.
 - Run `node scripts/resumeCliArgs.test.mjs`.
+- Run `node scripts/historyResumeProject.test.mjs`.
 - Manually verify detail and context-menu resume for Claude/Codex, one/multiple/no candidates, picker cancel, Local/WSL/Bash, and main project/Worktree.
 - Switch between `zh-CN`, `zh-TW`, and `en-US` and verify picker, aria labels, and errors.
 
@@ -289,6 +294,10 @@ const command = appendResumeCliArgs(baseCommand, source, project);
 
 ```typescript
 const candidates = findHistoryProjects(session, projects);
+const cwdProjects = findLocalHistoryCwdProjects(session, projects);
+if (candidates.length === 0 && cwdProjects.length === 1) {
+  return resumeWithoutProject(session, { shell: cwdProjects[0].shell });
+}
 if (candidates.length === 0) return openProjectPicker(projects, { allowNewWindow: true });
 if (candidates.length > 1) return openProjectPicker(candidates);
 return resumeWithProject(session, candidates[0]);

@@ -11,6 +11,7 @@ import { useExternalSessionSyncStore } from "../stores/externalSessionSyncStore"
 import { useI18n } from "../lib/i18n";
 import { getHistoryPathArgs } from "../lib/historyPathArgs";
 import { inferSubagentParentSessionId } from "../lib/historySubagents";
+import { findLocalHistoryCwdProjects } from "../lib/historyResumeProject";
 import {
   HISTORY_SOURCE_DESCRIPTOR_BY_ID,
   type HistorySourceId,
@@ -106,12 +107,8 @@ function matchesHistorySource(project: Project, source: string): boolean {
 
 function findHistoryProjects(session: HistorySessionView | HistorySessionDetail, projects: Project[]): Project[] {
   const sourceProjects = projects.filter((project) => matchesHistorySource(project, session.source));
-  const cwd = "cwd" in session ? session.cwd?.trim() : null;
-  if (cwd) {
-    const normalizedCwd = normalizePathKey(cwd);
-    const cwdProjects = sourceProjects.filter((project) => normalizePathKey(project.path) === normalizedCwd);
-    if (cwdProjects.length > 0) return cwdProjects;
-  }
+  const cwdProjects = findLocalHistoryCwdProjects(session, sourceProjects);
+  if (cwdProjects.length > 0) return cwdProjects;
 
   const normalizedProjectKey = normalizePathKey(session.project_key);
   if (!normalizedProjectKey) return [];
@@ -854,7 +851,8 @@ export function HistoryWorkspace({ active = true }: HistoryWorkspaceProps) {
     session: HistorySessionView | HistorySessionDetail,
     title: string,
     project: Project | null,
-    worktree: WorktreeRecord | null
+    worktree: WorktreeRecord | null,
+    unscopedShell?: string
   ) => {
     const isRemote = session.session_ref?.transportKind === "ssh";
     if (isRemote) {
@@ -943,7 +941,8 @@ export function HistoryWorkspace({ active = true }: HistoryWorkspaceProps) {
     }
 
     try {
-      const shell = launchProject?.shell && launchProject.shell !== "powershell" ? launchProject.shell : undefined;
+      const requestedShell = launchProject ? launchProject.shell : unscopedShell;
+      const shell = requestedShell && requestedShell !== "powershell" ? requestedShell : undefined;
       await createSession(
         project?.id,
         cwd,
@@ -993,11 +992,16 @@ export function HistoryWorkspace({ active = true }: HistoryWorkspaceProps) {
     const worktree = findHistoryWorktree(session, worktrees);
     const worktreeProject = findProjectForWorktree(worktree, historyProjects);
     const matchedProjects = findHistoryProjects(session, historyProjects);
+    const cwdProjects = findLocalHistoryCwdProjects(session, historyProjects);
     const candidates = worktreeProject && matchesHistorySource(worktreeProject, session.source)
       ? [worktreeProject]
       : matchedProjects;
 
     if (candidates.length === 0) {
+      if (cwdProjects.length === 1) {
+        void resumeSession(session, title, null, null, cwdProjects[0].shell);
+        return;
+      }
       setResumeIntent({ session, title, worktree: null, projects, allowNewWindow: true, remote: false });
       return;
     }

@@ -215,3 +215,67 @@ generation = excluded.generation;
 #### Correct
 
 Obtain SQLite's writer lease, compare persisted generation/cursor inside that transaction, and return `applied=false` before any source/session mutation when the response is stale.
+
+## Scenario: Additive History Conversion While Target CLI Runs
+
+### 1. Scope / Trigger
+
+- Trigger: changing Claude/Codex history conversion, target bundle writers, shared JSONL indexes, or runtime mutation guards.
+- Goal: creating a new converted session must remain possible while the target CLI runs without weakening protection for mutations of existing sessions.
+
+### 2. Signatures
+
+- Tauri command remains `history_convert_session(file_path, claude_config_dir, codex_config_dir, source, project_key, target_source) -> Result<HistoryConversionResult, String>`.
+- Process guard remains `is_target_tool_running(source: &str) -> bool` for destructive mutation callers.
+- Shared JSONL helper remains `append_jsonl_line(path: &Path, line: &Value) -> Result<(), String>`.
+
+### 3. Contracts
+
+- Conversion is additive: every attempt creates a new target-native UUID and an exclusive rollout/transcript path; it never edits or replaces an active session.
+- A running target CLI alone must not return `history_target_tool_running` from `history_convert_session`.
+- Codex `history.jsonl` and `session_index.jsonl` records are serialized with their trailing newline and written through one append `write_all` call.
+- Codex `state_5.sqlite` registration uses SQLite locking and the bounded 15-second busy timeout. A real busy timeout, schema error, or I/O error is returned; it is never converted to success.
+- Delete, backup restore, and restore-plan paths continue to call `is_target_tool_running`; they mutate existing artifacts and remain exclusive.
+- `history_source_manual_recovery_required` still blocks conversion when the target source has an unresolved recovery lock.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Target CLI is running and conversion writes a new session | Continue conversion; do not return `history_target_tool_running` |
+| Target SQLite writer remains busy past 15 seconds | Return `codex_state_register_failed` or the underlying database-open error |
+| Target source has a manual recovery lock | Return `history_source_manual_recovery_required`; write nothing |
+| Delete or restore targets a running CLI | Return `history_target_tool_running` |
+| Source or target is unsupported, identical, or a subagent root | Preserve the existing stable validation error; write nothing |
+
+### 5. Good / Base / Bad Cases
+
+- Good: Claude converts to a fresh Codex rollout while other Codex sessions remain active; both shared index lines parse and the SQLite thread row registers.
+- Base: no target CLI is running; conversion behavior and result payload are unchanged.
+- Bad: remove `is_target_tool_running` from the shared helper or destructive callers, allowing an active transcript to be deleted or restored.
+- Bad: keep the process guard at the conversion entry and reject every conversion from a machine currently using Codex.
+
+### 6. Tests Required
+
+- Rust: Claude -> Codex and Codex -> Claude writer/parser round trips preserve the new session id and messages.
+- Rust: concurrent `append_jsonl_line` calls produce the expected record count and every line parses as JSON.
+- Rust/source audit: `history_convert_session` has no target-process guard, while delete, restore, and restore-plan call sites retain it.
+- Run `cargo fmt -- --check`, focused conversion/append tests, `cargo test history --lib`, and `cargo check`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+if is_target_tool_running(&target_source) {
+    return Err("history_target_tool_running".to_string());
+}
+convert_history_session(&detail, &target_source, &roots)?;
+```
+
+#### Correct
+
+```rust
+// Conversion owns a fresh target id/path; destructive callers keep the process guard.
+let result = convert_history_session(&detail, &target_source, &roots)?;
+```

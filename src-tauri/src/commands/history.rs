@@ -1418,9 +1418,6 @@ pub async fn history_convert_session(
             return Err("history_subagent_mutation_not_allowed".to_string());
         }
         let target_source = target_source.trim().to_lowercase();
-        if is_target_tool_running(&target_source) {
-            return Err("history_target_tool_running".to_string());
-        }
         let detail = build_session_detail(&file_ref, false)?;
         let result = convert_history_session(&detail, &target_source, &roots)?;
         let codex_registration = if target_source == "codex" {
@@ -5168,7 +5165,8 @@ fn append_codex_session_index(
 }
 
 fn append_jsonl_line(path: &Path, line: &Value) -> Result<(), String> {
-    let encoded = serde_json::to_string(line).map_err(|err| err.to_string())?;
+    let mut encoded = serde_json::to_string(line).map_err(|err| err.to_string())?;
+    encoded.push('\n');
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
@@ -5176,7 +5174,6 @@ fn append_jsonl_line(path: &Path, line: &Value) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     file.write_all(encoded.as_bytes())
         .map_err(|err| err.to_string())?;
-    file.write_all(b"\n").map_err(|err| err.to_string())?;
     file.flush().map_err(|err| err.to_string())
 }
 
@@ -13899,6 +13896,37 @@ mod tests {
         assert_eq!(detail.messages.len(), 2);
         assert_eq!(detail.messages[0].role, "user");
         assert_eq!(detail.messages[1].content, "world");
+    }
+
+    #[test]
+    fn append_jsonl_line_keeps_concurrent_records_intact() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("index.jsonl");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let handles = (0..8)
+            .map(|worker| {
+                let path = path.clone();
+                let barrier = std::sync::Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for record in 0..50 {
+                        append_jsonl_line(&path, &json!({ "worker": worker, "record": record }))
+                            .unwrap();
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        let content = std::fs::read_to_string(path).unwrap();
+        let records = content
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 400);
     }
 
     #[test]
