@@ -1,12 +1,17 @@
 import { Undo2 } from "../../icons";
+import type { GitDiffWhitespaceMode } from "../../../lib/gitDiffOptions";
 import { useI18n } from "../../../lib/i18n";
 import type { GitDiffController } from "./types";
 
 interface GitDiffSelectionBarProps {
   controller: GitDiffController;
+  whitespaceMode?: GitDiffWhitespaceMode;
 }
 
-export function GitDiffSelectionBar({ controller }: GitDiffSelectionBarProps) {
+export function GitDiffSelectionBar({
+  controller,
+  whitespaceMode = "exact",
+}: GitDiffSelectionBarProps) {
   const { t } = useI18n();
   const {
     parsed,
@@ -29,7 +34,9 @@ export function GitDiffSelectionBar({ controller }: GitDiffSelectionBarProps) {
             color: "var(--text-muted)",
           }}
         >
-          {t("git.diff.nonUtf8PartialRevertDisabled")}
+          {t(whitespaceMode === "exact"
+            ? "git.diff.nonUtf8PartialRevertDisabled"
+            : "git.diff.whitespacePartialRevertDisabled")}
         </div>
       )}
 

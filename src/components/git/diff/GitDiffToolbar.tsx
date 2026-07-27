@@ -9,7 +9,9 @@ import {
   X,
 } from "lucide-react";
 import { useI18n } from "../../../lib/i18n";
+import type { GitDiffOptions } from "../../../lib/gitDiffOptions";
 import type { GitDiffViewMode } from "../../../stores/settingsStore";
+import { GitDiffGenerationOptions } from "./GitDiffGenerationOptions";
 
 interface GitDiffToolbarProps {
   filePath: string;
@@ -19,6 +21,7 @@ interface GitDiffToolbarProps {
   additions: number;
   deletions: number;
   viewMode: GitDiffViewMode;
+  diffOptions?: GitDiffOptions;
   canNavigatePrevious: boolean;
   canNavigateNext: boolean;
   canOpenSource: boolean;
@@ -26,6 +29,7 @@ interface GitDiffToolbarProps {
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
   onViewModeChange: (mode: GitDiffViewMode) => void;
+  onDiffOptionsChange?: (options: GitDiffOptions) => void;
   onOpenSource: () => void;
   onPin?: () => void;
   onRequestDiscard: () => void;
@@ -42,6 +46,7 @@ export function GitDiffToolbar({
   additions,
   deletions,
   viewMode,
+  diffOptions,
   canNavigatePrevious,
   canNavigateNext,
   canOpenSource,
@@ -49,6 +54,7 @@ export function GitDiffToolbar({
   onNavigatePrevious,
   onNavigateNext,
   onViewModeChange,
+  onDiffOptionsChange,
   onOpenSource,
   onPin,
   onRequestDiscard,
@@ -134,6 +140,10 @@ export function GitDiffToolbar({
           <span className="hidden sm:inline">{t("git.diff.unified")}</span>
         </button>
       </div>
+
+      {diffOptions && onDiffOptionsChange && (
+        <GitDiffGenerationOptions options={diffOptions} onChange={onDiffOptionsChange} />
+      )}
 
       <div className="flex shrink-0 items-center gap-1">
         <button

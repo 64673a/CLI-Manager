@@ -6,6 +6,7 @@
 
 - Git 变更 Diff 弹窗新增按当前筛选顺序的文件与 Hunk 导航，支持 `F7` / `Shift+F7`、首尾边界提示、仓库相对路径、文件序号和增删统计；Split / Unified 显示模式会持久化并参与偏好同步，源码跳转可定位到当前 Hunk，且本地、WSL、SSH 与嵌套仓库共用同一审阅交互。
 - Git Diff 弹窗可将当前文件固定到项目文件编辑器，支持多标签、实时刷新、跨文件/Hunk 导航以及整文件、Hunk、行级回滚；固定页与 Git 面板通过引用计数共享本地、WSL 或 SSH Transport，面板关闭、Workspan 切换和嵌套仓库同路径均不会串用上下文。
+- Git Diff 新增精确比较、忽略行尾空白、忽略全部空白以及 3/10/20 行上下文选项，设置会持久化并参与偏好同步；本地 libgit2、WSL Git CLI 与 SSH Agent 返回一致语义，忽略空白时禁用 Hunk/行级回滚。SSH 默认选项兼容旧 Agent，非默认选项通过 Agent `0.1.5`、协议 `1.8` 的 `gitDiffOptions` capability 协商。
 
 ## [V1.3.2] - 2026-07-27
 

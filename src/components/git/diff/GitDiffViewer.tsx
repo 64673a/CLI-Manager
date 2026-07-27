@@ -1,5 +1,6 @@
 import { useCallback, type KeyboardEvent } from "react";
 import { useSettingsStore } from "../../../stores/settingsStore";
+import type { GitDiffOptions } from "../../../lib/gitDiffOptions";
 import type { GitDiffViewMode } from "../../../stores/settingsStore";
 import { GitDiffContent } from "./GitDiffContent";
 import { GitDiffHeader } from "./GitDiffHeader";
@@ -18,7 +19,9 @@ export interface GitDiffViewerProps {
   closeOnRevert?: boolean;
   useTerminalTheme?: boolean;
   viewMode?: GitDiffViewMode;
+  diffOptions?: GitDiffOptions;
   onViewModeChange?: (viewMode: GitDiffViewMode) => void;
+  onDiffOptionsChange?: (options: GitDiffOptions) => void;
   review?: GitDiffReviewContext;
 }
 
@@ -30,7 +33,9 @@ export function GitDiffViewer({
   closeOnRevert = false,
   useTerminalTheme = false,
   viewMode = "split",
+  diffOptions,
   onViewModeChange,
+  onDiffOptionsChange,
   review,
 }: GitDiffViewerProps) {
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
@@ -90,6 +95,7 @@ export function GitDiffViewer({
           additions={review.additions}
           deletions={review.deletions}
           viewMode={viewMode}
+          diffOptions={diffOptions}
           canNavigatePrevious={canNavigatePrevious}
           canNavigateNext={canNavigateNext}
           canOpenSource={target.status !== "D"}
@@ -97,6 +103,7 @@ export function GitDiffViewer({
           onNavigatePrevious={() => navigate("previous")}
           onNavigateNext={() => navigate("next")}
           onViewModeChange={onViewModeChange}
+          onDiffOptionsChange={onDiffOptionsChange}
           onOpenSource={() => review.onOpenSource(controller.activeHunkNewStart)}
           onPin={review.onPin}
           onRequestDiscard={requestDiscard}
@@ -116,7 +123,10 @@ export function GitDiffViewer({
         useTerminalTheme={useTerminalTheme}
         viewMode={viewMode}
       />
-      <GitDiffSelectionBar controller={controller} />
+      <GitDiffSelectionBar
+        controller={controller}
+        whitespaceMode={diffOptions?.whitespace}
+      />
     </div>
   );
 }

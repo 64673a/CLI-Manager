@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GitFileDiffPayload } from "../../../lib/gitTransport";
+import type { GitDiffOptions } from "../../../lib/gitDiffOptions";
 import { useI18n } from "../../../lib/i18n";
 import type { GitTreeNode } from "../../../lib/types";
 import { useSettingsStore } from "../../../stores/settingsStore";
@@ -23,7 +24,7 @@ interface GitDiffReviewDialogProps {
   untrackedTree: GitTreeNode[];
   statusFilter: GitDiffReviewStatusFilter;
   initialFilePath: string;
-  loadDiff: (filePath: string, status: string) => Promise<GitFileDiffPayload>;
+  loadDiff: (filePath: string, status: string, options?: GitDiffOptions) => Promise<GitFileDiffPayload>;
   revertHunk: (filePath: string, diffText: string, hunkIndex: number) => Promise<void>;
   revertLines: (
     filePath: string,
@@ -53,7 +54,13 @@ export function GitDiffReviewDialog({
 }: GitDiffReviewDialogProps) {
   const { t } = useI18n();
   const gitDiffViewMode = useSettingsStore((state) => state.gitDiffViewMode);
+  const gitDiffWhitespaceMode = useSettingsStore((state) => state.gitDiffWhitespaceMode);
+  const gitDiffContextLines = useSettingsStore((state) => state.gitDiffContextLines);
   const updateSettings = useSettingsStore((state) => state.update);
+  const diffOptions = useMemo<GitDiffOptions>(() => ({
+    whitespace: gitDiffWhitespaceMode,
+    contextLines: gitDiffContextLines,
+  }), [gitDiffContextLines, gitDiffWhitespaceMode]);
   const targets = useMemo(() => buildGitDiffReviewTargets({
     tree,
     untrackedTree,
@@ -93,7 +100,7 @@ export function GitDiffReviewDialog({
 
   const dataSource = useMemo<GitDiffDataSource>(() => ({
     kind: "live",
-    load: (target) => loadDiff(target.filePath, target.status),
+    load: (target) => loadDiff(target.filePath, target.status, diffOptions),
     mutations: {
       revertHunk: (target, content, hunkIndex) => (
         revertHunk(target.filePath, content, hunkIndex)
@@ -105,7 +112,16 @@ export function GitDiffReviewDialog({
         target.status,
       ),
     },
-  }), [loadDiff, onRequestDiscard, revertHunk, revertLines]);
+  }), [diffOptions, loadDiff, onRequestDiscard, revertHunk, revertLines]);
+
+  const handleDiffOptionsChange = useCallback(async (options: GitDiffOptions) => {
+    if (options.whitespace !== gitDiffWhitespaceMode) {
+      await updateSettings("gitDiffWhitespaceMode", options.whitespace);
+    }
+    if (options.contextLines !== gitDiffContextLines) {
+      await updateSettings("gitDiffContextLines", options.contextLines);
+    }
+  }, [gitDiffContextLines, gitDiffWhitespaceMode, updateSettings]);
 
   const selectAdjacentFile = useCallback((offset: -1 | 1) => {
     const nextTarget = targets[activeIndex + offset];
@@ -129,7 +145,9 @@ export function GitDiffReviewDialog({
           dataSource={dataSource}
           onClose={onClose}
           viewMode={gitDiffViewMode}
+          diffOptions={diffOptions}
           onViewModeChange={(mode) => void updateSettings("gitDiffViewMode", mode)}
+          onDiffOptionsChange={(options) => void handleDiffOptionsChange(options)}
           review={{
             fileIndex: activeIndex,
             fileCount: targets.length,

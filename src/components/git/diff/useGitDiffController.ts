@@ -118,6 +118,9 @@ export function useGitDiffController({
         if (cancelled) return;
         const message = loadError instanceof Error ? loadError.message : String(loadError);
         if (message.includes("binary_file")) setError(t("files.error.binaryFile"));
+        else if (message.includes("ssh_agent_capability_missing:gitDiffOptions")) {
+          setError(t("git.diff.sshAgentUpgradeRequired"));
+        }
         else if (message.includes("text_decode_failed") || message.includes("text_encoding_unknown")) {
           setError(t("files.error.encodingUnknown"));
         } else setError(message);
@@ -170,7 +173,7 @@ export function useGitDiffController({
   );
 
   const revertHunk = useCallback(async (hunkIndex: number) => {
-    if (!mutations?.revertHunk) return;
+    if (!canRevertHunks || !mutations?.revertHunk) return;
     setReverting(true);
     try {
       await mutations.revertHunk(stableTarget, diffText, hunkIndex);
@@ -181,10 +184,10 @@ export function useGitDiffController({
     } finally {
       setReverting(false);
     }
-  }, [diffText, mutations, onReverted, stableTarget, t]);
+  }, [canRevertHunks, diffText, mutations, onReverted, stableTarget, t]);
 
   const revertSelectedLines = useCallback(async () => {
-    if (!mutations?.revertLines) return;
+    if (!canRevertLines || !mutations?.revertLines) return;
     const lines = selectedLines(parsed, selectedKeys);
     if (lines.length === 0) return;
     setReverting(true);
@@ -197,7 +200,7 @@ export function useGitDiffController({
     } finally {
       setReverting(false);
     }
-  }, [diffText, mutations, onReverted, parsed, selectedKeys, stableTarget, t]);
+  }, [canRevertLines, diffText, mutations, onReverted, parsed, selectedKeys, stableTarget, t]);
 
   useEffect(() => {
     setActiveHunkIndex(initialHunkPlacement === "last" && hunkCount > 0 ? hunkCount - 1 : 0);

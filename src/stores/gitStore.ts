@@ -7,6 +7,7 @@ import {
   type GitRepositoryRef,
   type GitTransport,
 } from "../lib/gitTransport";
+import type { GitDiffOptions } from "../lib/gitDiffOptions";
 
 type GitStatusFilter = "all" | "M" | "A" | "D" | "U";
 
@@ -66,7 +67,7 @@ interface GitStore {
   discardFile: (filePath: string, status: string) => Promise<void>;
   discardAll: () => Promise<void>;
   deleteUntrackedPaths: (paths: string[]) => Promise<void>;
-  loadFileDiff: (filePath: string, status: string) => Promise<GitFileDiffPayload>;
+  loadFileDiff: (filePath: string, status: string, options?: GitDiffOptions) => Promise<GitFileDiffPayload>;
   revertHunk: (filePath: string, diffText: string, hunkIndex: number) => Promise<void>;
   revertLines: (filePath: string, diffText: string, selectedLines: { side: "old" | "new"; lineNumber: number }[]) => Promise<void>;
   stageFile: (filePath: string) => Promise<void>;
@@ -504,11 +505,11 @@ export const useGitStore = create<GitStore>((set, get) => ({
     }
   },
 
-  loadFileDiff: async (filePath: string, status: string) => {
+  loadFileDiff: async (filePath: string, status: string, options?: GitDiffOptions) => {
     const { currentProjectPath } = get();
     const repoPath = effectiveRepoPath();
     if (!currentProjectPath || repoPath === null) throw new Error("no_project");
-    return (await currentTransport(currentProjectPath).getFileDiff(repoPath, filePath, status)).value;
+    return (await currentTransport(currentProjectPath).getFileDiff(repoPath, filePath, status, options)).value;
   },
 
   revertHunk: async (filePath: string, diffText: string, hunkIndex: number) => {

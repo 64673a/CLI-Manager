@@ -5,6 +5,7 @@ import { getSshClientInstanceId } from "./sshClientIdentity";
 import { useBackgroundOperationStore } from "../stores/backgroundOperationStore";
 import { useSshAgentIntegrationStore } from "../stores/sshAgentIntegrationStore";
 import { useSshHostStore } from "../stores/sshHostStore";
+import { isDefaultGitDiffOptions, type GitDiffOptions } from "./gitDiffOptions";
 
 interface SshGitLaunch extends SshConnectionSpecPayload {
   hostId: string;
@@ -62,7 +63,7 @@ export function createSshRemoteGitConsumerId(
   ].join(":");
 }
 
-type ReadKind = "gitListRepositories" | "gitChanges" | "gitDiff" | "gitBranchStatus" | "gitBranches";
+type ReadKind = "gitListRepositories" | "gitChanges" | "gitDiff" | "gitDiffWithOptions" | "gitBranchStatus" | "gitBranches";
 type WriteKind =
   | "gitStage" | "gitUnstage" | "gitStageAll" | "gitUnstageAll"
   | "gitDiscardFile" | "gitDeleteUntracked" | "gitRevertHunk" | "gitRevertLines"
@@ -188,8 +189,23 @@ export async function sshRemoteGitChanges(context: SshRemoteGitContext, repoPath
   return { value: result.changes, asOf: result.asOf };
 }
 
-export async function sshRemoteGitDiff(context: SshRemoteGitContext, repoPath: string, relativePath: string, status: string): Promise<SshRemoteGitSnapshot<SshRemoteGitDiff>> {
-  const result = await request<{ diff: SshRemoteGitDiff; asOf: number }>(context, "gitDiff", { repoPath, relativePath, status }, true);
+export async function sshRemoteGitDiff(
+  context: SshRemoteGitContext,
+  repoPath: string,
+  relativePath: string,
+  status: string,
+  options?: GitDiffOptions,
+): Promise<SshRemoteGitSnapshot<SshRemoteGitDiff>> {
+  const useLegacyRequest = isDefaultGitDiffOptions(options);
+  const kind = useLegacyRequest ? "gitDiff" : "gitDiffWithOptions";
+  const result = await request<{ diff: SshRemoteGitDiff; asOf: number }>(
+    context,
+    kind,
+    useLegacyRequest
+      ? { repoPath, relativePath, status }
+      : { repoPath, relativePath, status, options },
+    true,
+  );
   return { value: result.diff, asOf: result.asOf };
 }
 

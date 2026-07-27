@@ -96,6 +96,78 @@ invoke("git_get_file_diff", { projectPath, filePath });
 <GitDiffReviewDialog loadDiff={gitStore.loadFileDiff} onOpenSource={revealSource} />
 ```
 
+## Diff Generation Options
+
+### 1. Scope / Trigger
+
+- Applies to live Git review and pinned-editor Diff loading for local, WSL, macOS/Linux, and SSH repositories.
+- Snapshot consumers remain unchanged and do not expose generation controls.
+
+### 2. Signatures
+
+```ts
+type GitDiffWhitespaceMode = "exact" | "ignore-eol" | "ignore-all";
+type GitDiffContextLines = 3 | 10 | 20;
+
+interface GitDiffOptions {
+  whitespace: GitDiffWhitespaceMode;
+  contextLines: GitDiffContextLines;
+}
+
+GitTransport.getFileDiff(
+  repoId: string,
+  path: string,
+  status: string,
+  options?: GitDiffOptions,
+): Promise<GitTransportResult<GitFileDiffPayload>>;
+```
+
+### 3. Contracts
+
+- The default is `exact` plus 3 context lines. Omitting `options` preserves the legacy request and result.
+- `settingsStore.gitDiffWhitespaceMode` and `settingsStore.gitDiffContextLines` belong to the `preferences` sync domain; invalid persisted values migrate to the defaults.
+- Desktop local uses libgit2 `ignore_whitespace_eol`, `ignore_whitespace`, and `context_lines`. WSL and SSH CLI use `--ignore-space-at-eol`, `--ignore-all-space`, and `--unified=N`.
+- A non-`exact` payload always returns `canRevertHunks=false`. The controller must also guard its Hunk and line mutation callbacks; hiding buttons alone is insufficient.
+- SSH sends explicit `exact+3` through legacy `gitDiff` without an `options` field. Non-default values use `gitDiffWithOptions` and require `gitDiffOptions` capability.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Missing options | Normalize to `exact+3` |
+| Persisted whitespace/context outside the fixed enums | Migrate to `exact+3` |
+| Rust request contains unsupported context lines or unknown fields | Reject at the command/Agent boundary |
+| Non-exact Diff | Return `canRevertHunks=false`; keep whole-file discard available |
+| SSH Agent lacks `gitDiffOptions` | Show localized upgrade guidance; do not write the request frame |
+| Non-UTF-8, binary, untracked, or conflict target | Preserve the existing read-only/safe fallback |
+
+### 5. Good / Base / Bad Cases
+
+- Good: changing from 3 to 20 context lines reloads the same stable target without changing repository identity.
+- Base: an old SSH Agent receives only legacy `gitDiff` for `exact+3` and continues working.
+- Bad: send `{ options: { whitespace: "exact", contextLines: 3 } }` with legacy `gitDiff`; published Agents reject the unknown field.
+- Bad: allow `revertHunk` to execute only because the method is callable after the UI button was hidden.
+
+### 6. Tests Required
+
+- Run real Git fixtures for all whitespace modes and 3/10/20 context lines on Desktop native and POSIX Agent CLI paths.
+- Assert invalid context rejection, non-exact `canRevertHunks=false`, settings migration/sync, and controller mutation guards.
+- Assert the daemon rejects a missing capability before request serialization and that explicit default SSH options produce a field-compatible legacy payload.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: legacy Agent rejects the unknown options field.
+request("gitDiff", { repoPath, relativePath, status, options });
+
+// Correct: preserve the legacy wire shape; negotiate only new behavior.
+const legacy = isDefaultGitDiffOptions(options);
+request(
+  legacy ? "gitDiff" : "gitDiffWithOptions",
+  legacy ? { repoPath, relativePath, status } : { repoPath, relativePath, status, options },
+);
+```
+
 ## Pinned Editor Workspace
 
 ### 1. Scope / Trigger
@@ -164,4 +236,5 @@ npx tsc --noEmit
 node --test scripts/gitDiffViewerArchitecture.test.mjs scripts/gitStoreRemote.test.mjs
 node --test scripts/gitDiffReviewNavigation.test.mjs scripts/gitDiffSettings.test.mjs
 node --test scripts/gitTransportLease.test.mjs scripts/gitDiffWorkspace.test.mjs scripts/gitDiffEditorPin.test.mjs
+node --test scripts/gitDiffGenerationOptions.test.mjs
 ```

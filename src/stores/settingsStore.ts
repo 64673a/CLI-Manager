@@ -33,6 +33,7 @@ import {
   recordCliArgsUsage,
   type CliArgsHistoryEntry,
 } from "../lib/cliArgsHistory";
+import type { GitDiffContextLines, GitDiffWhitespaceMode } from "../lib/gitDiffOptions";
 
 export {
   DESKTOP_PET_SIZE_DEFAULT_PERCENT,
@@ -428,6 +429,10 @@ export interface Settings {
   gitGroupBy: "directory" | "module";
   /** Git Diff 显示模式：左右分栏或统一单栏。 */
   gitDiffViewMode: GitDiffViewMode;
+  /** Git Diff 空白比较模式。 */
+  gitDiffWhitespaceMode: GitDiffWhitespaceMode;
+  /** Git Diff 上下文行数。 */
+  gitDiffContextLines: GitDiffContextLines;
   confirmBeforeClosingTerminalTab: boolean;
   terminalTabHoverInfoEnabled: boolean;
   fileExplorerIgnoredPaths: FileExplorerIgnoredPaths;
@@ -598,6 +603,8 @@ const DEFAULTS: Settings = {
   ccSwitchDbPath: null,
   gitGroupBy: "directory",
   gitDiffViewMode: "split",
+  gitDiffWhitespaceMode: "exact",
+  gitDiffContextLines: 3,
   confirmBeforeClosingTerminalTab: false,
   terminalTabHoverInfoEnabled: true,
   fileExplorerIgnoredPaths: {},
@@ -1473,6 +1480,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       entries.gitDiffViewMode === "split" || entries.gitDiffViewMode === "unified"
         ? entries.gitDiffViewMode
         : DEFAULTS.gitDiffViewMode;
+    entries.gitDiffWhitespaceMode =
+      entries.gitDiffWhitespaceMode === "exact"
+      || entries.gitDiffWhitespaceMode === "ignore-eol"
+      || entries.gitDiffWhitespaceMode === "ignore-all"
+        ? entries.gitDiffWhitespaceMode
+        : DEFAULTS.gitDiffWhitespaceMode;
+    entries.gitDiffContextLines =
+      entries.gitDiffContextLines === 3
+      || entries.gitDiffContextLines === 10
+      || entries.gitDiffContextLines === 20
+        ? entries.gitDiffContextLines
+        : DEFAULTS.gitDiffContextLines;
     entries.fileExplorerIgnoredPaths = migrateFileExplorerIgnoredPaths(entries.fileExplorerIgnoredPaths);
     entries.batchLaunchGroupInPane =
       typeof entries.batchLaunchGroupInPane === "boolean"

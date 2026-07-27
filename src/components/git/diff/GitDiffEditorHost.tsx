@@ -4,6 +4,7 @@ import { useGitTransportLease } from "../../../hooks/useGitTransportLease";
 import { debugConsoleWarn } from "../../../lib/debugConsole";
 import { GIT_BACKGROUND_REFRESH_INTERVAL_MS } from "../../../lib/gitRefreshPolicy";
 import type { GitTransportLease } from "../../../lib/gitTransportLease";
+import type { GitDiffOptions } from "../../../lib/gitDiffOptions";
 import { useI18n } from "../../../lib/i18n";
 import type { Project } from "../../../lib/types";
 import { useFileExplorerStore } from "../../../stores/fileExplorerStore";
@@ -47,7 +48,13 @@ export function GitDiffEditorHost({
   const openProject = useFileExplorerStore((state) => state.openProject);
   const revealPath = useFileExplorerStore((state) => state.revealPath);
   const gitDiffViewMode = useSettingsStore((state) => state.gitDiffViewMode);
+  const gitDiffWhitespaceMode = useSettingsStore((state) => state.gitDiffWhitespaceMode);
+  const gitDiffContextLines = useSettingsStore((state) => state.gitDiffContextLines);
   const updateSettings = useSettingsStore((state) => state.update);
+  const diffOptions = useMemo<GitDiffOptions>(() => ({
+    whitespace: gitDiffWhitespaceMode,
+    contextLines: gitDiffContextLines,
+  }), [gitDiffContextLines, gitDiffWhitespaceMode]);
 
   const refreshTab = useCallback(async (
     tab: GitDiffWorkspaceTab,
@@ -119,6 +126,7 @@ export function GitDiffEditorHost({
           activeTab.repositoryId,
           target.filePath,
           target.status,
+          diffOptions,
         )
       ).value,
       mutations: {
@@ -145,7 +153,16 @@ export function GitDiffEditorHost({
         requestDiscard: () => setDiscardTabId(activeTab.id),
       },
     };
-  }, [activeTab, lease, runMutation]);
+  }, [activeTab, diffOptions, lease, runMutation]);
+
+  const handleDiffOptionsChange = useCallback(async (options: GitDiffOptions) => {
+    if (options.whitespace !== gitDiffWhitespaceMode) {
+      await updateSettings("gitDiffWhitespaceMode", options.whitespace);
+    }
+    if (options.contextLines !== gitDiffContextLines) {
+      await updateSettings("gitDiffContextLines", options.contextLines);
+    }
+  }, [gitDiffContextLines, gitDiffWhitespaceMode, updateSettings]);
 
   const selectAdjacentTab = useCallback((offset: -1 | 1) => {
     const nextTab = workspace.tabs[activeIndex + offset];
@@ -217,7 +234,9 @@ export function GitDiffEditorHost({
         dataSource={dataSource}
         useTerminalTheme
         viewMode={gitDiffViewMode}
+        diffOptions={diffOptions}
         onViewModeChange={(mode) => void updateSettings("gitDiffViewMode", mode)}
+        onDiffOptionsChange={(options) => void handleDiffOptionsChange(options)}
         onClose={() => closeTab(context.key, activeTab.id)}
         review={{
           fileIndex: activeIndex,
