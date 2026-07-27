@@ -453,3 +453,58 @@ if (!repoPath) return;
 // Correct: 只有 null 表示当前没有仓库。
 if (repoPath === null) return;
 ```
+
+---
+
+## Git Transport Lease 与固定 Diff 生命周期合约
+
+### 1. Scope / Trigger
+
+- Git 面板或固定到编辑器的实时 Diff 需要创建、共享或释放 SSH Git context 时适用。
+
+### 2. Signatures
+
+```typescript
+acquireGitTransportLease(project: Project): Promise<GitTransportLease>;
+releaseSshRemoteGitContext(context: SshRemoteGitContext): Promise<void>;
+```
+
+### 3. Contracts
+
+- SSH lease identity 至少包含 project、host、remote path 和 Agent installation；同 identity 的并发消费者共享一个 Transport。
+- `release()` 必须幂等。只有最后一个消费者释放时才调用 `history_remote_close`；同 key 的下一次 acquire 必须等待前一次 dispose 完成。
+- Git 面板关闭只释放自身 lease，不得关闭仍被固定 Diff 使用的 SSH consumer。
+- 项目、Host、remote path 或 installation 变化后，旧异步结果不得写入新上下文。
+- SSH 根仓库继续使用合法空 `repositoryId === ""`，固定页不得将其当作 context 缺失。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| 多消费者并发 acquire 同一 key | 只创建一次 context，引用计数递增 |
+| 同一 lease 重复 release | no-op，不重复关闭 consumer |
+| 最后消费者 release | 调用一次 `history_remote_close` |
+| dispose 尚未完成时重新 acquire 同 key | 等待 dispose，再创建新 generation |
+| SSH context 构建失败 | acquire 失败并清理 registry entry，不回退本地 Git |
+
+### 5. Good / Base / Bad Cases
+
+- Good: 面板与固定页共享 SSH context，关闭面板后固定页仍能加载和回滚。
+- Base: local/WSL 复用相同 lease 机制，但 dispose 不调用远程 close。
+- Bad: 每个组件独立创建相同 consumer，并在任一组件卸载时无条件关闭。
+
+### 6. Tests Required
+
+- Node 测试覆盖并发 acquire、最终释放、重复释放和 release/acquire 排序。
+- SSH 回归测试覆盖根仓库空 id、面板关闭后固定页写操作和 context 切换隔离。
+- 提交前运行 `npx tsc --noEmit`、相关 Node 测试和 GitNexus `detect_changes`。
+
+### 7. Wrong vs Correct
+
+```typescript
+// Wrong: 组件卸载就直接关闭共享 consumer。
+await releaseSshRemoteGitContext(context);
+
+// Correct: 组件只释放 lease，由 registry 决定是否关闭最后一个 consumer。
+await lease.release();
+```

@@ -45,6 +45,23 @@ export interface SshRemoteGitDiff {
   canRevertHunks: boolean;
 }
 
+export function createSshRemoteGitConsumerId(
+  clientInstanceId: string,
+  hostId: string,
+  projectId: string,
+  rootPath: string,
+  installationId: string,
+): string {
+  return [
+    "git",
+    clientInstanceId,
+    hostId,
+    projectId,
+    installationId,
+    encodeURIComponent(rootPath),
+  ].join(":");
+}
+
 type ReadKind = "gitListRepositories" | "gitChanges" | "gitDiff" | "gitBranchStatus" | "gitBranches";
 type WriteKind =
   | "gitStage" | "gitUnstage" | "gitStageAll" | "gitUnstageAll"
@@ -80,9 +97,21 @@ export async function buildSshRemoteGitContext(project: Project): Promise<SshRem
 
   const clientInstanceId = getSshClientInstanceId();
   const rootPath = project.remote_path.trim();
+  const contextKey = JSON.stringify([
+    project.id,
+    host.id,
+    rootPath,
+    installation.installation_id,
+  ]);
   return {
-    contextKey: [project.id, host.id, rootPath, installation.installation_id].join(":"),
-    consumerId: `git:${clientInstanceId}:${host.id}:${project.id}`,
+    contextKey,
+    consumerId: createSshRemoteGitConsumerId(
+      clientInstanceId,
+      host.id,
+      project.id,
+      rootPath,
+      installation.installation_id,
+    ),
     rootPath,
     launch: {
       ...buildSshConnectionSpec(host, hosts),
@@ -101,6 +130,13 @@ export async function buildSshRemoteGitContext(project: Project): Promise<SshRem
       startupCommand: null,
     },
   };
+}
+
+export async function releaseSshRemoteGitContext(context: SshRemoteGitContext): Promise<void> {
+  await invoke("history_remote_close", {
+    hostId: context.launch.hostId,
+    consumerId: context.consumerId,
+  });
 }
 
 async function request<T>(

@@ -96,6 +96,65 @@ invoke("git_get_file_diff", { projectPath, filePath });
 <GitDiffReviewDialog loadDiff={gitStore.loadFileDiff} onOpenSource={revealSource} />
 ```
 
+## Pinned Editor Workspace
+
+### 1. Scope / Trigger
+
+- Applies when a live Git review target is pinned into the existing `file-editor` surface.
+- Snapshot consumers remain read-only and never create pinned tabs.
+
+### 2. Signatures
+
+```ts
+acquireGitTransportLease(project: Project): Promise<GitTransportLease>;
+createGitDiffTabId(contextKey: string, repositoryId: string, filePath: string): string;
+```
+
+### 3. Contracts
+
+- Pinned tabs live in `gitDiffWorkspaceStore`, keyed by project id, environment, host, and normalized project path; repository id plus repository-relative file path identifies one tab.
+- The workspace stores serializable identity only. It must not store a `Project`, `GitTransport`, callback, or request promise.
+- `FileEditorPane` composes `GitDiffEditorHost`; it must not own Git IPC, Transport creation, Diff loading, or revert mutations.
+- The Git panel and pinned host acquire reference-counted leases. A pinned mutation uses its own lease and only calls `gitStore.refreshIfContext(contextKey)` as a context-guarded notification.
+- Background pinned refresh updates only the pinned target. It must not duplicate the Git panel polling request.
+- Local Windows drive identities are case-insensitive; POSIX and WSL path segments preserve case. Local and WSL environments never share a lease key.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Same project/repository/file is pinned again | Update metadata and activate the existing tab |
+| Same file path exists in another nested repository | Open a distinct tab |
+| Active change disappears after refresh | Close that pinned tab and select an adjacent tab |
+| Project/host/remote path/Agent installation changes | Release the old lease and ignore its late results |
+| Pinned Transport acquisition fails | Show a localized error state; never fall back from SSH to local Git |
+| Revert confirmation remains open while another tab is selected | Keep the message and mutation bound to the originally requested tab |
+
+### 5. Good / Base / Bad Cases
+
+- Good: closing the Git panel leaves the pinned SSH Diff operational because the pinned host still owns a lease.
+- Base: closing the last consumer releases `history_remote_close`; local and WSL disposal is a no-op.
+- Bad: storing the current global `gitStore.transport` in a pinned tab or using it for a write after project switching.
+- Bad: lowercasing a POSIX project path and merging `/Work/Repo` with `/work/repo`.
+
+### 6. Tests Required
+
+- Unit-test concurrent acquire, idempotent release, final-consumer disposal, and acquire-during-release ordering.
+- Unit-test Windows root normalization, POSIX/WSL case sensitivity, project path isolation, root/nested repository identity, and duplicate-tab activation.
+- Assert `FileEditorPane` has no Git IPC/mutation ownership and all pinned-editor responsibility modules remain at most 300 lines.
+- Run the shared Viewer navigation, settings, architecture, and SSH root-repository regressions.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: a pinned write follows whichever panel context is current now.
+await useGitStore.getState().discardFile(tab.filePath, tab.status);
+
+// Correct: the pinned host writes through its own leased capability.
+await lease.transport.discardFile(tab.repositoryId, tab.filePath, tab.status);
+await useGitStore.getState().refreshIfContext(lease.contextKey);
+```
+
 ## Verification
 
 Run:
@@ -104,4 +163,5 @@ Run:
 npx tsc --noEmit
 node --test scripts/gitDiffViewerArchitecture.test.mjs scripts/gitStoreRemote.test.mjs
 node --test scripts/gitDiffReviewNavigation.test.mjs scripts/gitDiffSettings.test.mjs
+node --test scripts/gitTransportLease.test.mjs scripts/gitDiffWorkspace.test.mjs scripts/gitDiffEditorPin.test.mjs
 ```
