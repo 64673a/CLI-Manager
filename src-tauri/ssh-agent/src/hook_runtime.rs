@@ -33,6 +33,7 @@ const CLAUDE_EVENTS: &[&str] = &[
 const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
+    "Notification",
     "PermissionRequest",
     "Stop",
     "SubagentStart",
@@ -753,6 +754,10 @@ mod tests {
     #[test]
     fn validates_owner_source_event_and_installation() {
         validate_options(&options()).unwrap();
+        let mut codex_notification = options();
+        codex_notification.source = "codex".into();
+        codex_notification.event = "Notification".into();
+        validate_options(&codex_notification).unwrap();
         let mut invalid = options();
         invalid.managed_by = "other".into();
         assert_eq!(

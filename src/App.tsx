@@ -77,6 +77,8 @@ let startupUpdateChecked = false;
 let settingsModalPreloadStarted = false;
 const COMPACT_WINDOW_WIDTH = 350;
 const WINDOW_MIN_HEIGHT = 600;
+const CLAUDE_QUESTION_TOOL_NAME = "AskUserQuestion";
+const CODEX_QUESTION_TOOL_NAME = "request_user_input";
 interface DaemonSessionMeta {
   sessionId: string;
   alive: boolean;
@@ -201,7 +203,23 @@ function createClaudeHookToastId(tabId: string): string {
   return `${CLAUDE_HOOK_TOAST_PREFIX}-${tabId}-${claudeHookToastSequence}`;
 }
 
+function isQuestionRequestNotification(payload: CliHookPayload): boolean {
+  return (
+    payload.event === "Notification" &&
+    ((payload.source === "claude" && payload.toolName === CLAUDE_QUESTION_TOOL_NAME) ||
+      (payload.source === "codex" && payload.toolName === CODEX_QUESTION_TOOL_NAME))
+  );
+}
+
 function getClaudeHookToastStyle(payload: CliHookPayload): ClaudeHookToastStyle {
+  if (isQuestionRequestNotification(payload)) {
+    return {
+      variant: "attention",
+      icon: Info,
+      eyebrow: translateCurrent("notifications.hookToast.question"),
+      actionLabel: translateCurrent("notifications.hookToast.answer"),
+    };
+  }
   if (payload.event === "Stop") {
     return { variant: "finished", icon: CircleCheck, eyebrow: translateCurrent("notifications.hookToast.finished"), actionLabel: translateCurrent("notifications.hookToast.view") };
   }
@@ -222,8 +240,11 @@ function getCliHookSourceName(payload: CliHookPayload): string {
 }
 
 function getClaudeHookToastTitle(payload: CliHookPayload, tabTitle: string): string {
-  if (payload.title) return payload.title;
   const sourceName = getCliHookSourceName(payload);
+  if (isQuestionRequestNotification(payload)) {
+    return translateCurrent("notifications.hookToast.title.question", { sourceName });
+  }
+  if (payload.title) return payload.title;
   if (payload.event === "Stop") return translateCurrent("notifications.hookToast.title.finished", { tabTitle });
   if (payload.event === "StopFailure") return translateCurrent("notifications.hookToast.title.failed", { tabTitle });
   if (payload.event === "PermissionRequest") return translateCurrent("notifications.hookToast.title.approval", { sourceName });
@@ -264,6 +285,10 @@ function getSystemNotificationBody(payload: CliHookPayload, projectName: string)
   const sourceName = getCliHookSourceName(payload);
   const detail = payload.message?.trim();
   const suffix = detail ? `: ${truncateSystemNotificationDetail(detail)}` : "";
+
+  if (isQuestionRequestNotification(payload)) {
+    return translateCurrent("notifications.system.question", { sourceName, projectName, suffix });
+  }
 
   switch (payload.event) {
     case "Stop":
