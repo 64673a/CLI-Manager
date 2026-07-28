@@ -3034,7 +3034,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           continue;
         }
         // 检查路径是否有效
-        if (!projectHealth[ps.projectId]) {
+        if (project.environment_type !== "ssh" && projectHealth[ps.projectId] === false) {
           // 路径无效但仍创建终端，显示警告
           toast.warning(`项目路径无效: ${project.name}`, {
             description: `路径 ${project.path} 不存在，终端可能无法正常工作`,
