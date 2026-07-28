@@ -1814,3 +1814,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 53: 修复同目录 Tab 切换时文件树刷新
+
+**Date**: 2026-07-28
+**Task**: 修复同目录 Tab 切换时文件树刷新
+**Branch**: `feat/git-power`
+
+### Summary
+
+文件项目打开按实际本地或 SSH 文件位置幂等；同目录切换保留文件树、展开和滚动状态，补充回归测试、V1.3.2 变更记录与前端状态规约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1dd1822c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
