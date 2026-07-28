@@ -392,6 +392,73 @@ const transcript = useTerminalStore((s) => (isVisible ? s.subagentTranscripts[se
 const messages = useIncrementalTranscriptCache(transcript?.content, transcript?.resetSeq);
 ```
 
+## Scenario: Question Request Notifications
+
+### 1. Scope / Trigger
+
+- Trigger: Codex calls `request_user_input`, or Claude Code calls `AskUserQuestion` and waits for the user to choose or answer.
+- Applies to: local/WSL/cc-switch/SSH Hook installation, bridge validation, Codex trust state, attention routing, and localized app/system notifications.
+
+### 2. Signatures
+
+```text
+Codex: PreToolUse matcher=request_user_input -> event=Notification
+Claude: PreToolUse matcher=AskUserQuestion -> event=Notification
+```
+
+### 3. Contracts
+
+- Both tools use an exact `PreToolUse` matcher. `PostToolUse`, `PermissionRequest`, and Claude `Notification/elicitation_dialog` are not question-request substitutes.
+- The bridge event remains `Notification`; `toolName` must survive normalization and transport so the frontend can distinguish a question request from an ordinary notification.
+- The Claude Attention module requires both `Notification(permission_prompt|idle_prompt)` and `PreToolUse(AskUserQuestion)`. The Codex Attention module requires both `PermissionRequest` and `PreToolUse(request_user_input)`.
+- Full install, module install, uninstall, status inspection, cc-switch common config, WSL commands, and SSH Agent templates must agree on these entries. Uninstall removes only the CLI-Manager-owned question command and preserves Claude `ToolStart` and sub-agent entries that share `PreToolUse`.
+- Codex maps the native event to trust-state name `pre_tool_use`; the exact matcher participates in `trusted_hash`. Trust-only repair is allowed only after every required event exists.
+- Codex trust-state table keys must be compared by parsed TOML value, not by source quoting. Literal keys such as `[hooks.state.'C:\Users\...']` and escaped basic keys such as `[hooks.state."C:\\Users\\..."]` are equivalent; merge must replace the existing CLI-Manager block instead of creating a duplicate table. Status inspection may collapse equivalent duplicate blocks for current CLI-Manager Hook keys before parsing the full config, while preserving unrelated state.
+- Missing or wrong matchers make an old installation partial/outdated. Status inspection must not silently install the missing event.
+- `Notification + source/toolName` selects the localized “selection or answer required” toast and system-notification copy before using the generic bridge title. Existing attention state, focus suppression, background override, target activation, and third-party notification settings remain authoritative.
+- When no frontend client is connected, an exact question request shares the existing `PermissionRequest` daemon activation path so a background task can ask for user input. Ordinary `Notification` events must not launch the app.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| Exact Codex/Claude question matcher | Emit one `Notification` with the matching `toolName`. |
+| Ordinary tool or wrong matcher | No question-request notification. |
+| Old install lacks the question entry | Report partial/outdated; reinstall upgrades it. |
+| Codex question trust is missing/stale | Repair only when the event set and feature flag are complete. |
+| Equivalent literal/basic keys duplicate a current CLI-Manager trust table | Keep the last block, remove only earlier equivalent CLI-Manager blocks, then parse and re-check the full config. |
+| Duplicate or invalid unrelated trust table | Preserve the file and return the parse error; do not rewrite user-owned state. |
+| Attention module uninstall | Remove approval/attention plus the owned question entry; preserve unrelated hooks. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a background Codex terminal requests one choice; the system notification says it is waiting for a selection or answer and opens the owning terminal when clicked.
+- Good: Codex previously wrote a literal Windows-path trust key and CLI-Manager wrote the equivalent escaped basic key; status inspection collapses the owned duplicate and keeps unrelated project/user state.
+- Base: Claude `permission_prompt` and Codex `PermissionRequest` keep their existing approval behavior.
+- Bad: registering a catch-all `PreToolUse` command causes every tool call to look like a question, removing all Claude `PreToolUse` entries during Attention uninstall, or comparing raw TOML header text and appending an equivalent duplicate key.
+
+### 6. Tests Required
+
+- Local Rust tests cover exact matcher install/status/uninstall, Claude common-config completeness, Codex `pre_tool_use` trust hash, and Codex `Notification` admission with unknown-event rejection.
+- Local Rust tests cover literal/basic TOML trust-key normalization, merge replacement, and status recovery from an already duplicated CLI-Manager state table.
+- SSH Agent tests cover managed entry counts, exact matcher merge/removal, and Codex runtime `Notification` admission.
+- Hook-schema tests preserve the question `toolName`; TypeScript type-check covers localized frontend recognition.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```text
+PreToolUse matcher="" -> Notification
+```
+
+#### Correct
+
+```text
+Codex PreToolUse matcher=request_user_input -> Notification
+Claude PreToolUse matcher=AskUserQuestion -> Notification
+```
+
 ## Scenario: System-Level Hook Notifications
 
 ### 1. Scope / Trigger

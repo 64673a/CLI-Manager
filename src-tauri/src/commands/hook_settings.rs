@@ -36,10 +36,11 @@ const CLAUDE_HOOK_EVENTS: [&str; 9] = [
     "PreToolUse",
     "PostToolUse",
 ];
-const CODEX_HOOK_EVENTS: [&str; 6] = [
+const CODEX_HOOK_EVENTS: [&str; 7] = [
     "SessionStart",
     "UserPromptSubmit",
     "PermissionRequest",
+    "PreToolUse",
     "Stop",
     "SubagentStart",
     "SubagentStop",
@@ -53,6 +54,8 @@ const PI_MODULE_SESSION_START: &str = "CLI_MANAGER_MODULE:sessionStart";
 const PI_MODULE_RUNNING: &str = "CLI_MANAGER_MODULE:running";
 const PI_MODULE_STOP: &str = "CLI_MANAGER_MODULE:stop";
 const PI_EXTENSION_CONFLICT_ERROR: &str = "pi_extension_conflict";
+const CLAUDE_QUESTION_TOOL_NAME: &str = "AskUserQuestion";
+const CODEX_QUESTION_TOOL_NAME: &str = "request_user_input";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -904,12 +907,21 @@ fn apply_claude_hook_module(settings: &mut Value, exe: &str, module: ClaudeHookM
             "UserPromptSubmit",
             build_command(exe, "claude", "UserPromptSubmit"),
         ),
-        ClaudeHookModule::Attention => add_hook_command_with_matcher(
-            settings,
-            "Notification",
-            "permission_prompt|idle_prompt",
-            build_command(exe, "claude", "Notification"),
-        ),
+        ClaudeHookModule::Attention => {
+            add_hook_command_with_matcher(
+                settings,
+                "Notification",
+                "permission_prompt|idle_prompt",
+                build_command(exe, "claude", "Notification"),
+            );
+            remove_named_hook_command(settings, "PreToolUse", "claude", "Notification");
+            add_hook_command_with_matcher(
+                settings,
+                "PreToolUse",
+                CLAUDE_QUESTION_TOOL_NAME,
+                build_command(exe, "claude", "Notification"),
+            );
+        }
         ClaudeHookModule::Stop => {
             add_hook_command(settings, "Stop", build_command(exe, "claude", "Stop"))
         }
@@ -964,7 +976,8 @@ fn remove_claude_hook_module(settings: &mut Value, module: ClaudeHookModule) {
             remove_hook_commands(settings, &["UserPromptSubmit"], &CLAUDE_LEGACY_SCRIPTS)
         }
         ClaudeHookModule::Attention => {
-            remove_hook_commands(settings, &["Notification"], &CLAUDE_LEGACY_SCRIPTS)
+            remove_hook_commands(settings, &["Notification"], &CLAUDE_LEGACY_SCRIPTS);
+            remove_named_hook_command(settings, "PreToolUse", "claude", "Notification");
         }
         ClaudeHookModule::Stop => remove_hook_commands(settings, &["Stop"], &CLAUDE_LEGACY_SCRIPTS),
         ClaudeHookModule::Failure => {
@@ -990,11 +1003,20 @@ fn apply_codex_hook_module(settings: &mut Value, exe: &str, module: CodexHookMod
             "UserPromptSubmit",
             build_command(exe, "codex", "UserPromptSubmit"),
         ),
-        CodexHookModule::Attention => add_hook_command(
-            settings,
-            "PermissionRequest",
-            build_command(exe, "codex", "PermissionRequest"),
-        ),
+        CodexHookModule::Attention => {
+            add_hook_command(
+                settings,
+                "PermissionRequest",
+                build_command(exe, "codex", "PermissionRequest"),
+            );
+            remove_named_hook_command(settings, "PreToolUse", "codex", "Notification");
+            add_hook_command_with_matcher(
+                settings,
+                "PreToolUse",
+                CODEX_QUESTION_TOOL_NAME,
+                build_command(exe, "codex", "Notification"),
+            );
+        }
         CodexHookModule::Stop => {
             add_hook_command(settings, "Stop", build_command(exe, "codex", "Stop"))
         }
@@ -1023,7 +1045,8 @@ fn remove_codex_hook_module(settings: &mut Value, module: CodexHookModule) {
             remove_hook_commands(settings, &["UserPromptSubmit"], &CODEX_LEGACY_SCRIPTS)
         }
         CodexHookModule::Attention => {
-            remove_hook_commands(settings, &["PermissionRequest"], &CODEX_LEGACY_SCRIPTS)
+            remove_hook_commands(settings, &["PermissionRequest"], &CODEX_LEGACY_SCRIPTS);
+            remove_named_hook_command(settings, "PreToolUse", "codex", "Notification");
         }
         CodexHookModule::Stop => remove_hook_commands(settings, &["Stop"], &CODEX_LEGACY_SCRIPTS),
         CodexHookModule::Subagent => remove_hook_commands(
@@ -1236,6 +1259,11 @@ fn common_config_has_hooks(
             ) && exact_command_registered(
                 &settings,
                 "Notification",
+                &build_command(exe, "claude", "Notification"),
+            ) && exact_command_with_matcher_registered(
+                &settings,
+                "PreToolUse",
+                CLAUDE_QUESTION_TOOL_NAME,
                 &build_command(exe, "claude", "Notification"),
             ) && exact_command_registered(
                 &settings,
@@ -1924,6 +1952,7 @@ fn install_codex_hooks(codex_dir: &Path) -> Result<(), String> {
             "SessionStart",
             "UserPromptSubmit",
             "PermissionRequest",
+            "PreToolUse",
             "Stop",
             "SubagentStart",
             "SubagentStop",
@@ -2102,7 +2131,6 @@ fn merge_codex_common_config_hook_state_blocks(
         .iter()
         .filter_map(|block| block.first())
         .filter_map(|line| toml_hooks_state_key(line))
-        .map(str::to_string)
         .collect();
 
     remove_marker_owned_codex_hook_state_blocks(lines);
@@ -2173,7 +2201,7 @@ fn remove_codex_hook_state_blocks(lines: &mut Vec<String>, hook_state_keys: &[St
     let mut index = 0;
     while index < lines.len() {
         let remove_block = toml_hooks_state_key(&lines[index])
-            .is_some_and(|key| hook_state_keys.iter().any(|expected| expected == key));
+            .is_some_and(|key| hook_state_keys.iter().any(|expected| expected == &key));
         if remove_block {
             if next
                 .last()
@@ -2220,7 +2248,7 @@ fn read_codex_cli_manager_hook_state_blocks(codex_dir: &Path) -> Result<Vec<Vec<
 }
 
 fn codex_cli_manager_hook_state_keys(settings: &Value, hooks_path: &Path) -> Vec<String> {
-    let hooks_path = toml_escape_basic_string(&path_to_string(hooks_path));
+    let hooks_path = path_to_string(hooks_path);
     let Some(hooks) = settings.get("hooks").and_then(Value::as_object) else {
         return Vec::new();
     };
@@ -2251,6 +2279,7 @@ fn codex_cli_manager_hook_state_keys(settings: &Value, hooks_path: &Path) -> Vec
 fn codex_hook_state_event_name(event: &str) -> Option<&'static str> {
     match event {
         "PermissionRequest" => Some("permission_request"),
+        "PreToolUse" => Some("pre_tool_use"),
         "SessionStart" => Some("session_start"),
         "UserPromptSubmit" => Some("user_prompt_submit"),
         "Stop" => Some("stop"),
@@ -2347,7 +2376,7 @@ fn codex_hook_trusted_hash(event: &str, group: &Value, hook: &Value) -> Result<S
     );
     if matches!(
         event,
-        "PermissionRequest" | "SessionStart" | "SubagentStart" | "SubagentStop"
+        "PermissionRequest" | "PreToolUse" | "SessionStart" | "SubagentStart" | "SubagentStop"
     ) {
         if let Some(matcher) = group.get("matcher") {
             normalized_group.insert("matcher".to_string(), matcher.clone());
@@ -2368,7 +2397,7 @@ fn extract_codex_hook_state_blocks(config: &str, expected_keys: &[String]) -> Ve
     let mut index = 0;
     while index < lines.len() {
         let key = toml_hooks_state_key(lines[index]);
-        if key.is_some_and(|key| expected_keys.iter().any(|expected| expected == key)) {
+        if key.is_some_and(|key| expected_keys.iter().any(|expected| expected == &key)) {
             let mut block = vec![lines[index].to_string()];
             index += 1;
             while index < lines.len() && !is_toml_table_header(lines[index]) {
@@ -2383,11 +2412,65 @@ fn extract_codex_hook_state_blocks(config: &str, expected_keys: &[String]) -> Ve
     blocks
 }
 
-fn toml_hooks_state_key(line: &str) -> Option<&str> {
+fn toml_hooks_state_key(line: &str) -> Option<String> {
     let trimmed = line.trim();
-    trimmed
-        .strip_prefix("[hooks.state.\"")
-        .and_then(|tail| tail.strip_suffix("\"]"))
+    if !trimmed.starts_with("[hooks.state.") || !is_toml_table_header(trimmed) {
+        return None;
+    }
+
+    let probe = format!("{trimmed}\n__cli_manager_probe = true");
+    let parsed: toml::Value = toml::from_str(&probe).ok()?;
+    let state = parsed.get("hooks")?.get("state")?.as_table()?;
+    (state.len() == 1)
+        .then(|| state.keys().next().cloned())
+        .flatten()
+}
+
+fn deduplicate_codex_hook_state_blocks(config: &str, expected_keys: &[String]) -> Option<String> {
+    if expected_keys.is_empty() {
+        return None;
+    }
+
+    let lines: Vec<String> = config.lines().map(ToString::to_string).collect();
+    let mut seen_keys = Vec::new();
+    let mut remove_ranges = Vec::new();
+    for index in (0..lines.len()).rev() {
+        let Some(key) = toml_hooks_state_key(&lines[index]) else {
+            continue;
+        };
+        if !expected_keys.iter().any(|expected| expected == &key) {
+            continue;
+        }
+        if !seen_keys.iter().any(|seen| seen == &key) {
+            seen_keys.push(key);
+            continue;
+        }
+
+        let start = index
+            .checked_sub(1)
+            .filter(|previous| lines[*previous].trim() == CODEX_COMMON_CONFIG_HOOKS_MARKER)
+            .unwrap_or(index);
+        let end = lines
+            .iter()
+            .enumerate()
+            .skip(index + 1)
+            .find_map(|(next, line)| is_toml_table_header(line).then_some(next))
+            .unwrap_or(lines.len());
+        remove_ranges.push(start..end);
+    }
+    if remove_ranges.is_empty() {
+        return None;
+    }
+
+    let mut next_lines: Vec<String> = lines
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            (!remove_ranges.iter().any(|range| range.contains(&index))).then_some(line)
+        })
+        .collect();
+    trim_empty_lines(&mut next_lines);
+    Some(format!("{}\n", next_lines.join("\n")))
 }
 
 fn toml_escape_basic_string(value: &str) -> String {
@@ -2509,6 +2592,7 @@ fn uninstall_codex_hooks(codex_dir: &Path) -> Result<(), String> {
             "SessionStart",
             "UserPromptSubmit",
             "PermissionRequest",
+            "PreToolUse",
             "Stop",
             "SubagentStart",
             "SubagentStop",
@@ -3383,7 +3467,15 @@ fn build_claude_status(claude_dir: Option<PathBuf>) -> Result<ToolHookSettingsSt
         finished_script_installed: exe.is_some(),
         session_start_hook_installed: registered("SessionStart"),
         running_hook_installed: registered("UserPromptSubmit"),
-        attention_hook_installed: registered("Notification"),
+        attention_hook_installed: registered("Notification")
+            && registered_exact_command_with_matcher(
+                &settings,
+                exe.as_deref(),
+                "PreToolUse",
+                "claude",
+                "Notification",
+                CLAUDE_QUESTION_TOOL_NAME,
+            ),
         attention_hook_required: true,
         stop_hook_installed: registered("Stop"),
         failure_hook_installed: registered("StopFailure"),
@@ -3452,7 +3544,15 @@ fn build_codex_status(codex_dir: Option<PathBuf>) -> Result<ToolHookSettingsStat
         finished_script_installed: exe.is_some(),
         session_start_hook_installed: registered("SessionStart"),
         running_hook_installed: registered("UserPromptSubmit"),
-        attention_hook_installed: registered("PermissionRequest"),
+        attention_hook_installed: registered("PermissionRequest")
+            && registered_exact_command_with_matcher(
+                &settings,
+                exe.as_deref(),
+                "PreToolUse",
+                "codex",
+                "Notification",
+                CODEX_QUESTION_TOOL_NAME,
+            ),
         attention_hook_required: true,
         stop_hook_installed: registered("Stop"),
         failure_hook_installed: false,
@@ -3475,6 +3575,9 @@ fn build_codex_status(codex_dir: Option<PathBuf>) -> Result<ToolHookSettingsStat
 fn build_codex_status_with_trust_repair(
     codex_dir: Option<PathBuf>,
 ) -> Result<ToolHookSettingsStatus, String> {
+    if let Some(codex_dir) = codex_dir.as_deref() {
+        repair_duplicate_codex_hook_state_blocks(codex_dir)?;
+    }
     let status = build_codex_status(codex_dir.clone())?;
     let Some(codex_dir) = codex_dir else {
         return Ok(status);
@@ -3492,6 +3595,27 @@ fn build_codex_status_with_trust_repair(
 
     repair_codex_hook_trust(&codex_dir)?;
     build_codex_status(Some(codex_dir))
+}
+
+fn repair_duplicate_codex_hook_state_blocks(codex_dir: &Path) -> Result<(), String> {
+    let hooks_path = codex_dir.join(CODEX_HOOKS_FILE_NAME);
+    let config_path = codex_dir.join(CODEX_CONFIG_FILE_NAME);
+    let settings = read_json_if_exists(&hooks_path)?;
+    let expected_keys = codex_cli_manager_hook_state_keys(&settings, &hooks_path);
+    if expected_keys.is_empty() {
+        return Ok(());
+    }
+
+    let config = match fs::read_to_string(&config_path) {
+        Ok(value) => value,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("读取 {} 失败: {err}", path_to_string(&config_path))),
+    };
+    let Some(next) = deduplicate_codex_hook_state_blocks(&config, &expected_keys) else {
+        return Ok(());
+    };
+    fs::write(&config_path, next)
+        .map_err(|err| format!("写入 {} 失败: {err}", path_to_string(&config_path)))
 }
 
 fn repair_codex_hook_trust(codex_dir: &Path) -> Result<(), String> {
@@ -3796,11 +3920,54 @@ fn registered_exact_command(
     })
 }
 
+fn registered_exact_command_with_matcher(
+    settings: &Value,
+    exe: Option<&str>,
+    hook_event: &str,
+    source: &str,
+    command_event: &str,
+    matcher: &str,
+) -> bool {
+    exe.is_some_and(|exe| {
+        exact_command_with_matcher_registered(
+            settings,
+            hook_event,
+            matcher,
+            &build_command(exe, source, command_event),
+        )
+    })
+}
+
 fn exact_command_registered(settings: &Value, event: &str, command: &str) -> bool {
     settings
         .get("hooks")
         .and_then(|hooks| hooks.get(event))
         .is_some_and(|event_value| event_has_exact_command(event_value, command))
+}
+
+fn exact_command_with_matcher_registered(
+    settings: &Value,
+    event: &str,
+    matcher: &str,
+    command: &str,
+) -> bool {
+    settings
+        .get("hooks")
+        .and_then(|hooks| hooks.get(event))
+        .and_then(Value::as_array)
+        .is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                entry.get("matcher").and_then(Value::as_str) == Some(matcher)
+                    && entry
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|hooks| {
+                            hooks.iter().any(|hook| {
+                                hook.get("command").and_then(Value::as_str) == Some(command)
+                            })
+                        })
+            })
+        })
 }
 
 fn event_has_exact_command(event_value: &Value, command: &str) -> bool {
@@ -3987,6 +4154,17 @@ mod tests {
         assert!(hooks_json.contains("--source codex"));
         assert!(hooks_json.contains("--event SubagentStart"));
         assert!(hooks_json.contains("--event SubagentStop"));
+        assert!(hooks_json.contains(CODEX_QUESTION_TOOL_NAME));
+        let hooks: Value = serde_json::from_str(&hooks_json).unwrap();
+        let exe = hook_exe_for_dir(&codex_dir).unwrap();
+        assert!(registered_exact_command_with_matcher(
+            &hooks,
+            Some(&exe),
+            "PreToolUse",
+            "codex",
+            "Notification",
+            CODEX_QUESTION_TOOL_NAME,
+        ));
         assert!(!hooks_json.contains(".ps1"));
         assert!(!codex_dir
             .join("hooks")
@@ -4009,6 +4187,58 @@ mod tests {
         assert_eq!(
             codex_hook_trusted_hash("SessionStart", &group, hook).unwrap(),
             "sha256:9e6b7860465f1ee644164253a9e2aee2b124b234b836f5a68330eeb99929dfb4"
+        );
+    }
+
+    #[test]
+    fn codex_hook_state_key_normalizes_basic_and_literal_toml_strings() {
+        let key = r"C:\Users\1\.codex\hooks.json:session_start:0:0";
+        let basic = format!(r#"[hooks.state."{}"]"#, toml_escape_basic_string(key));
+        let literal = format!("[hooks.state.'{key}']");
+
+        assert_eq!(toml_hooks_state_key(&basic), Some(key.to_string()));
+        assert_eq!(toml_hooks_state_key(&literal), Some(key.to_string()));
+    }
+
+    #[test]
+    fn codex_hook_state_merge_replaces_equivalent_literal_key() {
+        let key = r"C:\Users\1\.codex\hooks.json:session_start:0:0";
+        let existing = format!(
+            "[features]\nhooks = true\n\n[hooks.state.'{key}']\ntrusted_hash = \"sha256:old\"\n\n[hooks.state.\"user-hook\"]\ntrusted_hash = \"sha256:user\"\n"
+        );
+        let blocks = vec![vec![
+            format!(r#"[hooks.state."{}"]"#, toml_escape_basic_string(key)),
+            "trusted_hash = \"sha256:new\"".to_string(),
+        ]];
+
+        let merged = merge_codex_common_config_toml(Some(&existing), &blocks);
+
+        toml::from_str::<toml::Value>(&merged).unwrap();
+        assert!(!merged.contains("sha256:old"));
+        assert!(merged.contains("sha256:new"));
+        assert!(merged.contains("sha256:user"));
+    }
+
+    #[test]
+    fn codex_pre_tool_use_trust_hash_includes_matcher() {
+        let group = json!({
+            "matcher": CODEX_QUESTION_TOOL_NAME,
+            "hooks": [{
+                "type": "command",
+                "command": "/tmp/cli-manager __hook --source codex --event Notification",
+                "timeout": 15
+            }]
+        });
+        let mut changed = group.clone();
+        changed["matcher"] = json!("other_tool");
+
+        assert_eq!(
+            codex_hook_state_event_name("PreToolUse"),
+            Some("pre_tool_use")
+        );
+        assert_ne!(
+            codex_hook_trusted_hash("PreToolUse", &group, &group["hooks"][0]).unwrap(),
+            codex_hook_trusted_hash("PreToolUse", &changed, &changed["hooks"][0]).unwrap()
         );
     }
 
@@ -4042,6 +4272,35 @@ mod tests {
         assert!(fs::read_to_string(config_path)
             .unwrap()
             .contains("[hooks.state.\"user-hook\"]\ntrusted_hash = \"sha256:user\""));
+    }
+
+    #[test]
+    fn codex_status_repairs_equivalent_duplicate_hook_state_keys() {
+        let tmp = TempDir::new().unwrap();
+        let codex_dir = tmp.path().join("codex");
+        fs::create_dir_all(&codex_dir).unwrap();
+        install_codex_hooks(&codex_dir).unwrap();
+        let installed = build_codex_status_with_trust_repair(Some(codex_dir.clone())).unwrap();
+        assert!(matches!(installed.status, HookInstallStatus::Installed));
+
+        let hooks_path = codex_dir.join(CODEX_HOOKS_FILE_NAME);
+        let settings = read_json_if_exists(&hooks_path).unwrap();
+        let key = codex_cli_manager_hook_state_keys(&settings, &hooks_path)
+            .into_iter()
+            .next()
+            .unwrap();
+        let config_path = codex_dir.join(CODEX_CONFIG_FILE_NAME);
+        let config = fs::read_to_string(&config_path).unwrap();
+        let broken = format!("[hooks.state.'{key}']\ntrusted_hash = \"sha256:old\"\n\n{config}");
+        fs::write(&config_path, broken).unwrap();
+        assert!(build_codex_status(Some(codex_dir.clone())).is_err());
+
+        let repaired = build_codex_status_with_trust_repair(Some(codex_dir)).unwrap();
+
+        assert!(matches!(repaired.status, HookInstallStatus::Installed));
+        let config = fs::read_to_string(config_path).unwrap();
+        toml::from_str::<toml::Value>(&config).unwrap();
+        assert!(!config.contains("sha256:old"));
     }
 
     #[test]
@@ -4257,6 +4516,7 @@ yolo = false
         assert!(after_install.contains("--event AgentToolStop"));
         assert!(after_install.contains("--event ToolStart"));
         assert!(after_install.contains("--event ToolStop"));
+        assert!(after_install.contains(CLAUDE_QUESTION_TOOL_NAME));
 
         uninstall_claude_hooks(&claude_dir).unwrap();
         let after_uninstall =
@@ -4267,6 +4527,91 @@ yolo = false
         assert!(!after_uninstall.contains("--event AgentToolStop"));
         assert!(!after_uninstall.contains("--event ToolStart"));
         assert!(!after_uninstall.contains("--event ToolStop"));
+    }
+
+    #[test]
+    fn uninstall_claude_attention_preserves_tool_lifecycle_hooks() {
+        let tmp = TempDir::new().unwrap();
+        let claude_dir = tmp.path().join("claude");
+        fs::create_dir_all(&claude_dir).unwrap();
+        install_claude_hooks(&claude_dir).unwrap();
+
+        uninstall_claude_hook_module(&claude_dir, ClaudeHookModule::Attention).unwrap();
+
+        let settings = read_json(&claude_dir.join(CLAUDE_SETTINGS_FILE_NAME)).unwrap();
+        let exe = hook_exe_for_dir(&claude_dir).unwrap();
+        assert!(!registered_exact_command_with_matcher(
+            &settings,
+            Some(&exe),
+            "PreToolUse",
+            "claude",
+            "Notification",
+            CLAUDE_QUESTION_TOOL_NAME,
+        ));
+        assert!(registered_exact_command(
+            &settings,
+            Some(&exe),
+            "PreToolUse",
+            "claude",
+            "ToolStart",
+        ));
+        assert!(registered_exact_command(
+            &settings,
+            Some(&exe),
+            "PreToolUse",
+            "claude",
+            "AgentToolStart",
+        ));
+    }
+
+    #[test]
+    fn wrong_question_matcher_keeps_local_hook_status_partial() {
+        let tmp = TempDir::new().unwrap();
+        let claude_dir = tmp.path().join("claude");
+        let codex_dir = tmp.path().join("codex");
+        fs::create_dir_all(&claude_dir).unwrap();
+        fs::create_dir_all(&codex_dir).unwrap();
+
+        install_claude_hooks(&claude_dir).unwrap();
+        let claude_path = claude_dir.join(CLAUDE_SETTINGS_FILE_NAME);
+        let mut claude_settings = read_json(&claude_path).unwrap();
+        let claude_question = claude_settings["hooks"]["PreToolUse"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| {
+                entry.get("matcher").and_then(Value::as_str) == Some(CLAUDE_QUESTION_TOOL_NAME)
+            })
+            .unwrap();
+        claude_question["matcher"] = json!("OtherTool");
+        write_json(&claude_path, &claude_settings).unwrap();
+        let claude_status = build_claude_status(Some(claude_dir)).unwrap();
+        assert!(!claude_status.attention_hook_installed);
+        assert!(matches!(
+            claude_status.status,
+            HookInstallStatus::PartialInstalled
+        ));
+
+        install_codex_hooks(&codex_dir).unwrap();
+        trust_installed_codex_hooks(&codex_dir);
+        let codex_path = codex_dir.join(CODEX_HOOKS_FILE_NAME);
+        let mut codex_settings = read_json(&codex_path).unwrap();
+        let codex_question = codex_settings["hooks"]["PreToolUse"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|entry| {
+                entry.get("matcher").and_then(Value::as_str) == Some(CODEX_QUESTION_TOOL_NAME)
+            })
+            .unwrap();
+        codex_question["matcher"] = json!("OtherTool");
+        write_json(&codex_path, &codex_settings).unwrap();
+        let codex_status = build_codex_status_with_trust_repair(Some(codex_dir)).unwrap();
+        assert!(!codex_status.attention_hook_installed);
+        assert!(matches!(
+            codex_status.status,
+            HookInstallStatus::PartialInstalled
+        ));
     }
 
     #[tokio::test]
@@ -4523,6 +4868,24 @@ theme = "monokai"
         let without_notification = serde_json::to_string(&value).unwrap();
 
         assert!(!claude_common_config_has_hooks(Some(&without_notification), exe).unwrap());
+    }
+
+    #[test]
+    fn claude_common_config_has_hooks_requires_question_matcher() {
+        let exe = "/tmp/cli-manager";
+        let merged = merge_claude_common_config_hooks(None, exe).unwrap();
+        let mut value: Value = serde_json::from_str(&merged).unwrap();
+        let entries = value["hooks"]["PreToolUse"].as_array_mut().unwrap();
+        let question_entry = entries
+            .iter_mut()
+            .find(|entry| {
+                entry.get("matcher").and_then(Value::as_str) == Some(CLAUDE_QUESTION_TOOL_NAME)
+            })
+            .unwrap();
+        question_entry["matcher"] = json!("OtherTool");
+        let wrong_matcher = serde_json::to_string(&value).unwrap();
+
+        assert!(!claude_common_config_has_hooks(Some(&wrong_matcher), exe).unwrap());
     }
 
     #[test]

@@ -7,6 +7,7 @@ import { normalizeHistoryProjectPaths, resolveHistoryProjectPath } from "../lib/
 import { buildSshAgentHistoryContext, type SshAgentHistoryContext } from "../lib/sshAgentHistory";
 import { ensureHistorySourceSettingsLoaded, getHistoryPathArgs, getHistoryPathArgsSync } from "../lib/historyPathArgs";
 import { inferSubagentParentSessionId } from "../lib/historySubagents";
+import { sameHistorySessionIdentity } from "../lib/historySessionIdentity";
 import { useProjectStore } from "./projectStore";
 import { useSshAgentIntegrationStore } from "./sshAgentIntegrationStore";
 import { useBackgroundOperationStore } from "./backgroundOperationStore";
@@ -102,11 +103,11 @@ interface HistoryStore {
   toggleHistory: () => Promise<void>;
   setSourceFilter: (filter: HistorySourceFilter) => Promise<void>;
   setProjectPathFilter: (projectPath: string | null, projectId?: string | null) => Promise<void>;
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: { background?: boolean }) => Promise<void>;
   loadMoreSessions: () => Promise<void>;
   loadIndexStatus: () => Promise<void>;
   refreshIndex: () => Promise<void>;
-  addConvertedSession: (summary: unknown) => string;
+  addConvertedSession: (summary: unknown, detail: unknown) => string;
   openSession: (sessionKey: string) => Promise<void>;
   openSearchHit: (hit: HistorySearchHit) => Promise<void>;
   deleteSession: (sessionKey: string) => Promise<void>;
@@ -1691,7 +1692,7 @@ function ensureHistoryIndexListener(): Promise<void> {
     historyIndexReadyRefreshTimer = window.setTimeout(() => {
       historyIndexReadyRefreshTimer = null;
       const state = useHistoryStore.getState();
-      void state.loadSessions().then(() => {
+      void state.loadSessions({ background: true }).then(() => {
         const query = useHistoryStore.getState().globalQuery;
         if ([...query.trim()].length >= MIN_GLOBAL_SEARCH_CHARS) {
           return useHistoryStore.getState().runGlobalSearch(query);
@@ -1998,7 +1999,7 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
               error: null,
             },
           });
-          await get().loadSessions();
+          await get().loadSessions({ background: true });
         };
         const markRemoteRefreshError = (error: unknown) => {
           if (!isCurrentOpenRequest()) return;
@@ -2093,18 +2094,29 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     }
   },
 
-  loadSessions: async () => {
+  loadSessions: async (options) => {
     const requestSeq = ++sessionListRequestSeq;
     const remoteContext = get().remoteContext;
     const remoteConsumerId = remoteContext?.consumerId ?? null;
     const sourceFilter = get().sourceFilter;
     const projectPath = effectiveProjectPathFilter(get());
+    const background = options?.background === true && get().sessions.length > 0;
+    const sessionLimit = background
+      ? Math.max(SESSION_PAGE_SIZE, get().sessionListOffset)
+      : SESSION_PAGE_SIZE;
+    const fetchLimit = sessionLimit + 1;
     const stopPerf = createPerfMarker("history.sessions.load", {
       sourceFilter: get().sourceFilter,
       projectPathFilter: get().projectPathFilter ?? "__all__",
       scopedProjectPathFilter: get().scopedProjectPathFilter ?? "__none__",
+      mode: background ? "background" : "foreground",
+      limit: sessionLimit,
     });
-    set({ loadingSessions: true, loadingMoreSessions: false, hasMoreSessions: false, sessionListOffset: 0 });
+    if (background) {
+      set({ loadingSessions: false, loadingMoreSessions: false });
+    } else {
+      set({ loadingSessions: true, loadingMoreSessions: false, hasMoreSessions: false, sessionListOffset: 0 });
+    }
     try {
       await get().ensureMetaTable();
       const source = normalizeSourceFilter(sourceFilter);
@@ -2114,7 +2126,7 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
             sourceInstanceId: remoteContext.sourceInstanceId,
             projectPath,
             query: null,
-            limit: SESSION_PAGE_FETCH_LIMIT,
+            limit: fetchLimit,
             offset: 0,
           })
           : []
@@ -2123,11 +2135,11 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
           ...(await getHistoryPathArgs()),
           projectPath,
           query: null,
-          limit: SESSION_PAGE_FETCH_LIMIT,
+          limit: fetchLimit,
           offset: 0,
         });
       const allSummaries = (summariesRaw ?? []).map((item) => normalizeSummary(item));
-      const summaries = allSummaries.slice(0, SESSION_PAGE_SIZE);
+      const summaries = allSummaries.slice(0, sessionLimit);
       const metaMap = await readMetaMap();
       const sessions = remoteContext
         ? applyMeta(summaries, metaMap)
@@ -2141,7 +2153,7 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
       set({
         sessions,
         metaMap,
-        hasMoreSessions: allSummaries.length > SESSION_PAGE_SIZE,
+        hasMoreSessions: allSummaries.length > sessionLimit,
         sessionListOffset: summaries.length,
         sessionsIndexGeneration: get().indexStatus.generation,
         activeSessionKey: nextActiveKey,
@@ -2192,7 +2204,7 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
           remoteContext = synced;
           set({ remoteContext: synced });
           if (previousGeneration > 0 && synced.generation !== previousGeneration) {
-            await get().loadSessions();
+            await get().loadSessions({ background: true });
             return;
           }
         } catch (error) {
@@ -2307,7 +2319,7 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
           error: null,
         },
       });
-      await get().loadSessions();
+      await get().loadSessions({ background: true });
       if ([...get().globalQuery.trim()].length >= MIN_GLOBAL_SEARCH_CHARS) {
         await get().runGlobalSearch(get().globalQuery);
       }
@@ -2323,17 +2335,22 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
       historyIndexReadyRefreshTimer = null;
     }
     set({ indexStatus: normalizeIndexStatus(raw) });
-    await get().loadSessions();
+    await get().loadSessions({ background: true });
     const query = get().globalQuery;
     if ([...query.trim()].length >= MIN_GLOBAL_SEARCH_CHARS) {
       await get().runGlobalSearch(query);
     }
   },
 
-  addConvertedSession: (summary) => {
+  addConvertedSession: (summary, detail) => {
     const normalized = normalizeSummary(summary);
+    const normalizedDetail = normalizeDetail(detail);
+    if (!sameHistorySessionIdentity(normalized, normalizedDetail)) {
+      throw new Error("history_conversion_detail_mismatch");
+    }
     const sessionKey = summarySessionKey(normalized);
     const nextView = toView(normalized, get().metaMap[sessionKey]);
+    sessionDetailRequestSeq += 1;
     set((state) => ({
       sessions: sortSessionViews([
         nextView,
@@ -2344,6 +2361,8 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
           ? "all"
           : state.sourceFilter,
       activeSessionKey: sessionKey,
+      activeSession: normalizedDetail,
+      loadingSessionDetail: false,
       focusedMessageIndex: null,
     }));
     return sessionKey;
@@ -2357,7 +2376,12 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
       stopPerf({ skipped: true, reason: "missing-target" });
       return;
     }
-    set({ activeSessionKey: sessionKey, loadingSessionDetail: true, focusedMessageIndex: null });
+    set({
+      activeSessionKey: sessionKey,
+      activeSession: null,
+      loadingSessionDetail: true,
+      focusedMessageIndex: null,
+    });
     try {
       try {
         const remoteContext = get().remoteContext;
@@ -2381,11 +2405,15 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
             projectKey: target.project_key,
           });
         const detail = normalizeDetail(detailRaw);
+        if (!sameHistorySessionIdentity(target, detail)) {
+          throw new Error("history_session_identity_mismatch");
+        }
         if (requestSeq === sessionDetailRequestSeq) set({ activeSession: detail });
       } catch (err) {
         const snapshot = await readFavoriteSnapshotDetail(sessionKey);
         if (!snapshot) throw err;
         logWarn("history.favoriteSnapshot.fallback", { sessionKey, error: String(err) });
+        if (!sameHistorySessionIdentity(target, snapshot)) throw err;
         if (requestSeq === sessionDetailRequestSeq) set({ activeSession: snapshot });
       }
     } finally {
@@ -2400,7 +2428,12 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
     const requestSeq = ++sessionDetailRequestSeq;
     const sessionKey = hitSessionKey(hit);
     const stopPerf = createPerfMarker("history.session.detail", { sessionKey, fromSearch: true });
-    set({ activeSessionKey: sessionKey, loadingSessionDetail: true, focusedMessageIndex: null });
+    set({
+      activeSessionKey: sessionKey,
+      activeSession: null,
+      loadingSessionDetail: true,
+      focusedMessageIndex: null,
+    });
     try {
       const remoteContext = get().remoteContext;
       const detailRaw = hit.session_ref?.transportKind === "ssh"
@@ -2423,6 +2456,9 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
           projectKey: hit.project_key,
         });
       const detail = normalizeDetail(detailRaw);
+      if (!sameHistorySessionIdentity(hit, detail)) {
+        throw new Error("history_session_identity_mismatch");
+      }
       const exists = get().sessions.some((item) => item.sessionKey === sessionKey);
       if (exists) {
         if (requestSeq !== sessionDetailRequestSeq) return;

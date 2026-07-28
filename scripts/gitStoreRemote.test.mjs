@@ -61,6 +61,6 @@ test("SSH file context identity includes host and remote project root", () => {
   assert.match(terminalTabsSource, /filePanelProject\?\.remote_path/);
 });
 
-test("gitFull Agent has a new immutable release identity", () => {
-  assert.match(sshAgentManifestSource, /^version = "0\.1\.1"$/m);
+test("question Hook Agent has a new immutable release identity", () => {
+  assert.match(sshAgentManifestSource, /^version = "0\.1\.4"$/m);
 });

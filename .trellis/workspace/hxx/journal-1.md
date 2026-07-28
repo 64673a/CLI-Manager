@@ -1583,3 +1583,135 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Codex/Claude 提问通知 Hook
+
+**Date**: 2026-07-27
+**Task**: Codex/Claude 提问通知 Hook
+**Branch**: `master`
+
+### Summary
+
+为 Codex request_user_input 与 Claude AskUserQuestion 增加专用通知 Hook，补齐本地、WSL、cc-switch、SSH Agent、信任状态和双语通知；修复 Codex TOML 等价信任键重复导致的状态刷新失败。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dbba47ae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 47: 设置页侧边导航小屏滚动
+
+**Date**: 2026-07-27
+**Task**: 设置页侧边导航小屏滚动
+**Branch**: `master`
+
+### Summary
+
+修复设置页侧边菜单在小高度窗口中无法滚动的问题，为导航列表增加自适应纵向滚动，并同步 V1.3.2 更新日志与功能清单；TypeScript 和 diff 检查通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4dfd429b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 48: 修复历史转换与继续对话
+
+**Date**: 2026-07-27
+**Task**: 修复历史转换与继续对话
+**Branch**: `master`
+
+### Summary
+
+放开非破坏性 Claude/Codex 历史转换的运行态误阻断，保证共享 JSONL 单次追加，并让跨 CLI 转换后的会话在 cwd 唯一命中时直接裸恢复。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a4232e9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 49: 修复历史会话转换、删除与列表刷新
+
+**Date**: 2026-07-27
+**Task**: 修复历史会话转换、删除与列表刷新
+**Branch**: `master`
+
+### Summary
+
+修复 Claude/Codex 转换后的详情身份与恢复 CLI 串线；显式删除不再被同来源进程误拦截，备份恢复仍保持排他；历史索引自动/手动刷新保留已加载范围和滚动位置，并补齐契约与回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3556a869` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

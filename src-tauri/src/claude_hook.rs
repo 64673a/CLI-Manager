@@ -13,6 +13,8 @@ const REQUEST_PATH: &str = "/api/claude-hook";
 const MAX_BODY_BYTES: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const RECENT_HOOK_EVENT_LIMIT: usize = 1024;
+const CLAUDE_QUESTION_TOOL_NAME: &str = "AskUserQuestion";
+const CODEX_QUESTION_TOOL_NAME: &str = "request_user_input";
 
 #[derive(Default)]
 struct RecentHookEvents {
@@ -111,8 +113,14 @@ impl ClaudeHookPayload {
         &self.tab_id
     }
 
-    pub fn event(&self) -> &str {
-        &self.event
+    pub fn requires_user_response(&self) -> bool {
+        self.event == "PermissionRequest"
+            || (self.event == "Notification"
+                && matches!(
+                    (self.source.as_str(), self.tool_name.as_deref()),
+                    ("claude", Some(CLAUDE_QUESTION_TOOL_NAME))
+                        | ("codex", Some(CODEX_QUESTION_TOOL_NAME))
+                ))
     }
 
     pub fn with_remote_project_name(mut self, project_name: String) -> Self {
@@ -473,6 +481,7 @@ fn is_valid_payload(payload: &ClaudeHookRequest) -> bool {
             payload.event.as_str(),
             "SessionStart"
                 | "UserPromptSubmit"
+                | "Notification"
                 | "PermissionRequest"
                 | "Stop"
                 | "SubagentStart"
@@ -606,6 +615,26 @@ mod validation_tests {
     }
 
     #[test]
+    fn accepts_codex_question_notification_and_rejects_unknown_event() {
+        let notification: ClaudeHookRequest = serde_json::from_value(json!({
+            "tabId": "external:codex:session",
+            "source": "codex",
+            "event": "Notification",
+            "toolName": "request_user_input",
+        }))
+        .expect("test payload should deserialize");
+        assert!(is_valid_payload(&notification));
+
+        let unknown: ClaudeHookRequest = serde_json::from_value(json!({
+            "tabId": "external:codex:session",
+            "source": "codex",
+            "event": "UnknownEvent",
+        }))
+        .expect("test payload should deserialize");
+        assert!(!is_valid_payload(&unknown));
+    }
+
+    #[test]
     fn deduplicates_bounded_hook_event_ids() {
         let mut recent = RecentHookEvents::default();
         assert!(recent.accept(Some("event-1")));
@@ -651,6 +680,32 @@ mod remote_tests {
         }))
         .unwrap();
         payload
+    }
+
+    fn remote_question_notification(source: &str, tool_name: &str) -> super::ClaudeHookPayload {
+        remote_hook_payload_from_spool(&json!({
+            "kind": "hookEvent",
+            "eventId": "00000000-0000-4000-8000-000000000001",
+            "sequence": 1,
+            "hostId": "host",
+            "projectId": "project",
+            "tabId": "00000000-0000-4000-8000-000000000002",
+            "source": source,
+            "event": "Notification",
+            "toolName": tool_name,
+            "remoteCwd": "/srv/private-project",
+            "occurredAt": 1
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn question_notifications_require_user_response() {
+        assert!(remote_question_notification("claude", "AskUserQuestion").requires_user_response());
+        assert!(
+            remote_question_notification("codex", "request_user_input").requires_user_response()
+        );
+        assert!(!remote_question_notification("codex", "Read").requires_user_response());
     }
 
     #[test]

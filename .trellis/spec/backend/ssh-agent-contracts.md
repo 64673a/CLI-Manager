@@ -15,6 +15,8 @@ The delivered scope includes explicit one-shot probe/install lifecycle, remote C
   prerelease reports protocol `1.6`; releases `0.1.0` through `0.1.2` remain immutable.
   Agent `0.1.3` keeps protocol `1.7` and expands ordinary untracked directories into file
   entries so Diff, stage, and guarded deletion receive valid repository-relative paths.
+  Agent `0.1.4` keeps protocol `1.7` and adds exact Claude `AskUserQuestion` / Codex
+  `request_user_input` Hook templates plus Codex `Notification` runtime admission.
 - The independent Agent release tag is exactly `ssh-agent-v<agent-version>`. Its signed manifest
   must carry that Agent version and point only to assets on that same tag.
 - Independent Agent releases are GitHub prereleases with `make_latest: false`. The desktop
