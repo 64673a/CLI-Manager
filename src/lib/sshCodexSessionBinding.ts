@@ -3,7 +3,7 @@ import type { CodexLaunchSessionSelection } from "./resumeCliArgs";
 
 const SSH_SESSION_CLOCK_SKEW_MS = 60_000;
 
-export type SshCodexSessionBindingSelection =
+type SshCodexSessionBindingSelection =
   | { status: "resolved"; sessionId: string; sourceInstanceId: string }
   | { status: "not_found" }
   | { status: "ambiguous" };

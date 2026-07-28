@@ -3141,12 +3141,16 @@ fn ssh_jump_target(host: &RegisteredSshHost) -> String {
     } else {
         address.to_string()
     };
-    let user = (!host.username.trim().is_empty())
-        .then(|| format!("{}@", host.username.trim()))
-        .unwrap_or_default();
-    let port = (host.port != 0 && host.port != 22)
-        .then(|| format!(":{}", host.port))
-        .unwrap_or_default();
+    let user = if host.username.trim().is_empty() {
+        String::new()
+    } else {
+        format!("{}@", host.username.trim())
+    };
+    let port = if host.port == 0 || host.port == 22 {
+        String::new()
+    } else {
+        format!(":{}", host.port)
+    };
     format!("{user}{address}{port}")
 }
 
