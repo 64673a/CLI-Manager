@@ -1715,3 +1715,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: 修复 Git Diff 主题与同步横向滚动
+
+**Date**: 2026-07-28
+**Task**: 修复 Git Diff 主题与同步横向滚动
+**Branch**: `feat/git-power`
+
+### Summary
+
+统一 Diff 终端主题与工具栏状态，修复源文件和 Pin 打开流程，新增持久化换行/打开偏好，并让 nowrap Split 保持固定中线和左右同步滚动。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `354dbafc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
