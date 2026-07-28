@@ -1781,3 +1781,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: 升级桌面应用版本至 V1.3.2
+
+**Date**: 2026-07-28
+**Task**: 升级桌面应用版本至 V1.3.2
+**Branch**: `feat/git-power`
+
+### Summary
+
+统一 npm、Tauri 与 Rust 桌面应用版本元数据为 1.3.2，保持 SSH Agent 0.1.5 和既有 V1.3.2 Changelog 不变，并完成锁文件与 Cargo 校验。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c3e6a7ae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
