@@ -353,6 +353,94 @@ const parsed = useGitDiffParser(content, byteLength);
 const syntaxHighlight = !parsed.workerFallback && shouldHighlightGitDiff(metadata);
 ```
 
+## Theme, Wrapping, And Open Host Preferences
+
+### 1. Scope / Trigger
+
+- Live Git review dialogs and pinned editor Diff use the active terminal theme even when the application and terminal tones differ.
+- Snapshot consumers keep their existing application-theme behavior unless they explicitly request terminal theming.
+
+### 2. Signatures
+
+```ts
+type GitDiffOpenMode = "dialog" | "editor";
+
+interface GitDiffViewerProps {
+  useTerminalTheme?: boolean;
+  wrapLines?: boolean;
+  onWrapLinesChange?: (wrapLines: boolean) => void;
+}
+
+useGitDiffOpenWorkflow(options): {
+  openPreferredDiff(filePath: string): boolean;
+  openSourcePath(sourcePath: string, status: string, lineNumber?: number): Promise<boolean>;
+  pinDiff(target: GitDiffReviewTarget): Promise<boolean>;
+  sourcePathForFile(filePath: string): string;
+};
+```
+
+### 3. Contracts
+
+- `settingsStore.gitDiffOpenMode` defaults to `dialog`; `gitDiffWrapLines` defaults to `true`. Both validate persisted input and belong to the `preferences` sync domain.
+- Application Diff tokens are scoped to `data-git-diff-theme="application"`. Terminal roots provide complete surface, text, semantic, interaction, selection, and syntax tokens; global application light selectors must not override them.
+- Wrapped mode uses fixed-layout tables and `pre-wrap`. Unwrapped Split mode uses fixed gutter tracks plus equal `minmax(0, 1fr)` code tracks, while code cells use `white-space: pre` and one `GitDiffContent` horizontal scrollbar writes the same `scrollLeft` to both sides.
+- The Split center remains fixed during horizontal scrolling. Newly virtualized Hunk cells receive the current offset, and container or line-width changes recalculate the shared scroll range.
+- Hunk containers have no decorative border, radius, shadow, or overflow clipping. Changing wrap or view mode remeasures virtual Hunk heights.
+- Pinning from the review dialog persists `editor` only after the tab opens successfully. The pinned Pin control toggles the future default back to `dialog` without closing the current tab.
+- Source reveal and Pin close the review dialog only after success. Failures keep it open and use the existing localized toast.
+- Open-host preference changes only UI routing. Repository identity, Transport leases, mutation capabilities, file support, and snapshot read-only behavior remain unchanged.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Missing or invalid `gitDiffOpenMode` | Migrate to `dialog` |
+| Missing or non-boolean `gitDiffWrapLines` | Migrate to `true` |
+| Application and terminal tones differ | Resolve all live Diff tokens from the terminal palette |
+| `wrapLines=false` with an overlong line | Preserve one line, keep Split columns equal, and expose the content-owned synchronized scrollbar |
+| Pin cannot open the target tab | Keep `gitDiffOpenMode` unchanged, keep the dialog open, and show the localized error toast |
+| Source reveal returns `false` or throws | Keep the dialog open and show the localized error toast |
+| Preferred editor mode cannot resolve the selected change | Return `false` so the caller can retain the dialog fallback |
+| Deleted target requests source reveal | Return `false`; source action remains disabled |
+
+### 5. Good / Base / Bad Cases
+
+- Good: the application is light and the terminal is dark; the dialog surface, controls, syntax colors, focus rings, and native control scheme all remain dark-terminal themed.
+- Good: after a successful Pin, selecting another changed file reuses the pinned-editor workspace; toggling Pin there restores future dialog routing without closing the active tab.
+- Base: existing persisted settings omit both new keys and retain the legacy dialog plus wrapped-line behavior.
+- Bad: persist `editor` before tab creation finishes; a failed Pin would silently change future routing.
+- Bad: make the Diff table `max-content`; intrinsic line width moves the Split center and gives each side a different effective viewport.
+- Bad: give each Hunk or side its own visible scrollbar; virtualized Hunks drift to different horizontal offsets.
+
+### 6. Tests Required
+
+- Assert settings defaults, validation, and sync classification.
+- Assert terminal/application selector isolation, toolbar interaction states, fixed nowrap Split tracks, synchronized virtual-cell offsets, Hunk remeasurement, and absence of the old framed container classes.
+- Assert pin/open routing and success-gated dialog close behavior.
+- Run the architecture limit test and assert each Diff responsibility module remains at most 300 lines with no environment-specific branching in the shared viewer.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: change the preference before the asynchronous host operation succeeds.
+await updateSetting("gitDiffOpenMode", "editor");
+await openPinnedDiff(target);
+
+// Correct: success gates both persistence and dialog closure.
+const opened = await openPinnedTarget(target, true);
+if (opened) onClose();
+```
+
+```css
+/* Wrong: the application theme overrides terminal-themed descendants. */
+[data-theme="light"] .diff-viewer-container { --diff-bg: #ffffff; }
+
+/* Correct: application tokens apply only to application-themed roots. */
+[data-git-diff-theme="application"][data-theme-mode="light"] .diff-viewer-container {
+  --diff-bg: #ffffff;
+}
+```
+
 ## Verification
 
 Run:

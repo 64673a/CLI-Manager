@@ -99,6 +99,8 @@ export const SETTING_BACKUP_POLICY = {
   ccSwitchDbPath: "excluded",
   gitGroupBy: "preferences",
   gitDiffViewMode: "preferences",
+  gitDiffOpenMode: "preferences",
+  gitDiffWrapLines: "preferences",
   gitDiffWhitespaceMode: "preferences",
   gitDiffContextLines: "preferences",
   confirmBeforeClosingTerminalTab: "preferences",

@@ -18,6 +18,7 @@ interface GitDiffHunkListProps {
   fileName: string;
   scrollElementRef: RefObject<HTMLDivElement | null>;
   viewMode: GitDiffViewMode;
+  wrapLines: boolean;
 }
 
 const EMPTY_HUNKS: HunkData[] = [];
@@ -32,6 +33,7 @@ export function GitDiffHunkList({
   fileName,
   scrollElementRef,
   viewMode,
+  wrapLines,
 }: GitDiffHunkListProps) {
   const hunks = controller.parsed?.file.hunks ?? EMPTY_HUNKS;
   const [pendingFocus, setPendingFocus] = useState<PendingFocus | null>(null);
@@ -87,6 +89,10 @@ export function GitDiffHunkList({
   }, [controller.activeHunkIndex, hunks, virtualizer]);
 
   useEffect(() => {
+    virtualizer.measure();
+  }, [viewMode, virtualizer, wrapLines]);
+
+  useEffect(() => {
     if (!pendingFocus) return;
     if (pendingFocus.file !== controller.parsed?.file) {
       setPendingFocus(null);
@@ -102,7 +108,7 @@ export function GitDiffHunkList({
   if (!parsed) return null;
   return (
     <div
-      className="diff-viewer-container relative overflow-hidden rounded-lg border shadow-sm"
+      className="diff-viewer-container relative min-w-full"
       style={{ height: virtualizer.getTotalSize() }}
     >
       {virtualItems.map((virtualItem) => {

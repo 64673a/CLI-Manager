@@ -11,14 +11,8 @@ import { GitChangesTree } from "./GitChangesTree";
 import { StageCheckbox, type StageState } from "./StageCheckbox";
 import { STATUS_CONFIG } from "./GitStatusIcon";
 import { GitDiffReviewDialog } from "./diff/GitDiffReviewDialog";
-import type { GitDiffReviewTarget } from "./diff/reviewNavigation";
+import { useGitDiffOpenWorkflow } from "./diff/useGitDiffOpenWorkflow";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { useFileExplorerStore } from "../../stores/fileExplorerStore";
-import { useTerminalStore } from "../../stores/terminalStore";
-import {
-  createGitDiffWorkspaceContext,
-  useGitDiffWorkspaceStore,
-} from "../../stores/gitDiffWorkspaceStore";
 import { TERM, EmptyHint, panelColorTint } from "../stats/termStatsUi";
 import { debugConsoleWarn } from "../../lib/debugConsole";
 import { useI18n, type TranslationKey } from "../../lib/i18n";
@@ -329,10 +323,6 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
     fetchBranches,
   } = useGitStore();
   const { gitGroupBy, update: updateSettings } = useSettingsStore();
-  const openFileProject = useFileExplorerStore((state) => state.openProject);
-  const revealFilePath = useFileExplorerStore((state) => state.revealPath);
-  const openPinnedDiff = useGitDiffWorkspaceStore((state) => state.openTab);
-  const openFileEditorPane = useTerminalStore((state) => state.openFileEditorPane);
   const [diffModalOpen, setDiffModalOpen] = useState(false);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [confirmAllOpen, setConfirmAllOpen] = useState(false);
@@ -366,6 +356,13 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
   const rootRepoLabel = projectPath?.split(/[\\/]/).filter(Boolean).pop() || t("git.repo.root");
   const activeRepo = activeRepoPath ? repositories.find((repo) => repo.absolutePath === activeRepoPath) : null;
   const activeRepoLabel = activeRepo?.relativePath || rootRepoLabel;
+  const diffOpenWorkflow = useGitDiffOpenWorkflow({
+    project: panelProject,
+    projectPath,
+    repositoryPath: activeRepoPath,
+    repositoryRelativePath: activeRepo?.relativePath,
+    changes,
+  });
 
   useEffect(() => {
     if (!panelActive || !projectPath || !panelProject) {
@@ -518,55 +515,17 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
   const handleFileClick = (filePath: string) => {
     const fileChange = changes.find(c => c.path === filePath);
     if (fileChange) {
+      if (diffOpenWorkflow.openPreferredDiff(filePath)) return;
       setSelectedFilePath(filePath);
       setDiffModalOpen(true);
     }
   };
 
-  const projectRelativeGitPath = (filePath: string) => {
-    const repositoryPrefix = activeRepo?.relativePath?.replace(/\\/g, "/").replace(/^\/+|\/+$/gu, "");
-    const normalizedFilePath = filePath.replace(/\\/g, "/").replace(/^\/+|\/+$/gu, "");
-    return repositoryPrefix ? `${repositoryPrefix}/${normalizedFilePath}` : normalizedFilePath;
-  };
-
-  const openSourcePath = async (sourcePath: string, status: string, lineNumber?: number) => {
-    if (!panelProject || status === "D") return;
-    try {
-      await openFileProject(panelProject);
-      const revealed = await revealFilePath(sourcePath, { lineNumber });
-      if (!revealed) throw new Error("git_diff_source_not_found");
-      openFileEditorPane(panelProject);
-    } catch (err) {
-      toast.error(t("files.toast.openFileFailed"), { description: String(err) });
-    }
-  };
-
   const handleOpenSourceFile = (filePath: string, status: string) => {
-    void openSourcePath(projectRelativeGitPath(filePath), status);
-  };
-
-  const handlePinDiff = async (target: GitDiffReviewTarget) => {
-    if (!panelProject) return;
-    const change = changes.find((candidate) => candidate.path === target.filePath);
-    if (!change) return;
-    try {
-      await openFileProject(panelProject);
-      const context = createGitDiffWorkspaceContext(panelProject);
-      openPinnedDiff(context, {
-        repositoryId: activeRepoPath ?? (panelProject.environment_type === "ssh" ? "" : projectPath ?? panelProject.path),
-        repositoryRelativePath: activeRepo?.relativePath ?? "",
-        filePath: target.filePath,
-        sourcePath: target.sourcePath,
-        fileName: target.fileName,
-        status: target.status,
-        additions: change.added,
-        deletions: change.deleted,
-      });
-      openFileEditorPane(panelProject);
-      setDiffModalOpen(false);
-    } catch (err) {
-      toast.error(t("files.toast.openFileFailed"), { description: String(err) });
-    }
+    void diffOpenWorkflow.openSourcePath(
+      diffOpenWorkflow.sourcePathForFile(filePath),
+      status,
+    );
   };
 
   const handleRequestDiscard = useCallback((path: string, name: string, status: string) => {
@@ -1354,10 +1313,10 @@ export function GitChangesPanel({ open, projectPath, projectId, visible = true, 
           revertHunk={revertHunk}
           revertLines={revertLines}
           onRequestDiscard={handleRequestDiscard}
-          onOpenSource={(target, lineNumber) => {
-            void openSourcePath(target.sourcePath, target.status, lineNumber);
-          }}
-          onPin={(target) => void handlePinDiff(target)}
+          onOpenSource={(target, lineNumber) => (
+            diffOpenWorkflow.openSourcePath(target.sourcePath, target.status, lineNumber)
+          )}
+          onPin={diffOpenWorkflow.pinDiff}
         />
       )}
 

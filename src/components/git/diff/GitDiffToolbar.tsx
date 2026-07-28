@@ -6,6 +6,7 @@ import {
   PanelTop,
   Pin,
   Undo2,
+  WrapText,
   X,
 } from "lucide-react";
 import { useI18n } from "../../../lib/i18n";
@@ -21,6 +22,7 @@ interface GitDiffToolbarProps {
   additions: number;
   deletions: number;
   viewMode: GitDiffViewMode;
+  wrapLines: boolean;
   diffOptions?: GitDiffOptions;
   canNavigatePrevious: boolean;
   canNavigateNext: boolean;
@@ -29,14 +31,17 @@ interface GitDiffToolbarProps {
   onNavigatePrevious: () => void;
   onNavigateNext: () => void;
   onViewModeChange: (mode: GitDiffViewMode) => void;
+  onWrapLinesChange?: (wrapLines: boolean) => void;
   onDiffOptionsChange?: (options: GitDiffOptions) => void;
   onOpenSource: () => void;
   onPin?: () => void;
+  pinActive?: boolean;
   onRequestDiscard: () => void;
   onClose?: () => void;
 }
 
-const ICON_BUTTON_CLASS = "ui-focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:cursor-not-allowed disabled:opacity-35";
+const ICON_BUTTON_CLASS = "git-diff-toolbar-button ui-focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:cursor-not-allowed";
+const SEGMENT_BUTTON_CLASS = "git-diff-toolbar-segment ui-focus-ring flex h-6 items-center gap-1 rounded px-2 text-[11px] transition-colors";
 
 export function GitDiffToolbar({
   filePath,
@@ -46,6 +51,7 @@ export function GitDiffToolbar({
   additions,
   deletions,
   viewMode,
+  wrapLines,
   diffOptions,
   canNavigatePrevious,
   canNavigateNext,
@@ -54,9 +60,11 @@ export function GitDiffToolbar({
   onNavigatePrevious,
   onNavigateNext,
   onViewModeChange,
+  onWrapLinesChange,
   onDiffOptionsChange,
   onOpenSource,
   onPin,
+  pinActive = false,
   onRequestDiscard,
   onClose,
 }: GitDiffToolbarProps) {
@@ -120,8 +128,7 @@ export function GitDiffToolbar({
       >
         <button
           type="button"
-          className="ui-focus-ring flex h-6 items-center gap-1 rounded px-2 text-[11px]"
-          style={viewMode === "split" ? { backgroundColor: "var(--surface-container-high)" } : undefined}
+          className={SEGMENT_BUTTON_CLASS}
           aria-pressed={viewMode === "split"}
           onClick={() => onViewModeChange("split")}
           title={t("git.diff.split")}
@@ -131,8 +138,7 @@ export function GitDiffToolbar({
         </button>
         <button
           type="button"
-          className="ui-focus-ring flex h-6 items-center gap-1 rounded px-2 text-[11px]"
-          style={viewMode === "unified" ? { backgroundColor: "var(--surface-container-high)" } : undefined}
+          className={SEGMENT_BUTTON_CLASS}
           aria-pressed={viewMode === "unified"}
           onClick={() => onViewModeChange("unified")}
           title={t("git.diff.unified")}
@@ -144,6 +150,19 @@ export function GitDiffToolbar({
 
       {diffOptions && onDiffOptionsChange && (
         <GitDiffGenerationOptions options={diffOptions} onChange={onDiffOptionsChange} />
+      )}
+
+      {onWrapLinesChange && (
+        <button
+          type="button"
+          className={ICON_BUTTON_CLASS}
+          aria-pressed={wrapLines}
+          onClick={() => onWrapLinesChange(!wrapLines)}
+          title={wrapLines ? t("git.diff.disableWrap") : t("git.diff.enableWrap")}
+          aria-label={wrapLines ? t("git.diff.disableWrap") : t("git.diff.enableWrap")}
+        >
+          <WrapText size={15} />
+        </button>
       )}
 
       <div className="flex shrink-0 items-center gap-1">
@@ -162,8 +181,9 @@ export function GitDiffToolbar({
             type="button"
             className={ICON_BUTTON_CLASS}
             onClick={onPin}
-            title={t("git.diff.pin")}
-            aria-label={t("git.diff.pin")}
+            aria-pressed={pinActive}
+            title={pinActive ? t("git.diff.useDialogByDefault") : t("git.diff.pin")}
+            aria-label={pinActive ? t("git.diff.useDialogByDefault") : t("git.diff.pin")}
           >
             <Pin size={15} />
           </button>

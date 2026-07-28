@@ -16,6 +16,22 @@ test("Git diff view mode participates in preference sync", () => {
   assert.match(syncSettings, /gitDiffViewMode:\s*"preferences"/);
 });
 
+test("Git diff host and wrapping preferences default safely and validate persisted values", () => {
+  const settings = read("../src/stores/settingsStore.ts");
+  assert.match(settings, /gitDiffOpenMode:\s*"dialog"/);
+  assert.match(settings, /gitDiffWrapLines:\s*true/);
+  assert.match(settings, /entries\.gitDiffOpenMode === "dialog" \|\| entries\.gitDiffOpenMode === "editor"/);
+  assert.match(settings, /typeof entries\.gitDiffWrapLines === "boolean"/);
+  assert.match(settings, /: DEFAULTS\.gitDiffOpenMode/);
+  assert.match(settings, /: DEFAULTS\.gitDiffWrapLines/);
+});
+
+test("Git diff host and wrapping preferences participate in preference sync", () => {
+  const syncSettings = read("../src/lib/syncSettings.ts");
+  assert.match(syncSettings, /gitDiffOpenMode:\s*"preferences"/);
+  assert.match(syncSettings, /gitDiffWrapLines:\s*"preferences"/);
+});
+
 test("Git diff generation options default safely and validate persisted values", () => {
   const settings = read("../src/stores/settingsStore.ts");
   assert.match(settings, /gitDiffWhitespaceMode:\s*"exact"/);

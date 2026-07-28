@@ -29,6 +29,7 @@ export interface GitDiffReviewContext {
   onNavigateToNextFile: () => void;
   onOpenSource: (lineNumber?: number) => void;
   onPin?: () => void;
+  pinActive?: boolean;
 }
 
 export interface GitDiffMutationActions {

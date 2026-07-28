@@ -119,6 +119,8 @@ test("worker parsing and hunk virtualization keep cancellation and visible-only 
   assert.match(worker, /generation/);
   assert.match(list, /useVirtualizer/);
   assert.match(list, /measureElement/);
+  assert.match(list, /virtualizer\.measure\(\)/);
+  assert.match(list, /wrapLines/);
   assert.match(list, /scrollToIndex/);
   assert.match(list, /pendingFocus\.file !== controller\.parsed\?\.file/);
   assert.match(block, /tokenize\(\[hunk\]/);

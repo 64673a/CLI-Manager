@@ -11,6 +11,8 @@ const workspaceStore = read("../src/stores/gitDiffWorkspaceStore.ts");
 const fileStore = read("../src/stores/fileExplorerStore.ts");
 const gitStore = read("../src/stores/gitStore.ts");
 const gitPanel = read("../src/components/git/GitChangesPanel.tsx");
+const openWorkflow = read("../src/components/git/diff/useGitDiffOpenWorkflow.ts");
+const reviewDialog = read("../src/components/git/diff/GitDiffReviewDialog.tsx");
 const sshGit = read("../src/lib/sshRemoteGit.ts");
 
 test("file editor composes pinned Diff without owning Git transport or mutations", () => {
@@ -36,6 +38,16 @@ test("Git panel injects a leased transport and pinned host writes through its ow
   assert.doesNotMatch(gitStore, /createGitTransport/);
 });
 
+test("pinning selects the editor host and source reveal closes only after success", () => {
+  assert.match(gitPanel, /diffOpenWorkflow\.openPreferredDiff\(filePath\)/);
+  assert.match(openWorkflow, /gitDiffOpenMode !== "editor"/);
+  assert.match(openWorkflow, /updateSetting\("gitDiffOpenMode", "editor"\)/);
+  assert.match(editorHost, /gitDiffOpenMode === "editor" \? "dialog" : "editor"/);
+  assert.match(editorHost, /pinActive: gitDiffOpenMode === "editor"/);
+  assert.match(reviewDialog, /if \(await onOpenSource\(target, lineNumber\)\) onClose\(\)/);
+  assert.match(reviewDialog, /if \(await onPin\(target\)\) onClose\(\)/);
+});
+
 test("SSH Git context identity and release cover configuration changes", () => {
   assert.match(sshGit, /installation\.installation_id/);
   assert.match(sshGit, /encodeURIComponent\(rootPath\)/);
@@ -52,6 +64,7 @@ test("new pinned editor modules stay split by responsibility", () => {
     "../src/stores/gitDiffWorkspaceStore.ts",
     "../src/components/git/diff/GitDiffEditorHost.tsx",
     "../src/components/git/diff/GitDiffEditorTabs.tsx",
+    "../src/components/git/diff/useGitDiffOpenWorkflow.ts",
     "../src/components/files/FileEditorHeader.tsx",
     "../src/components/files/FileEditorTabs.tsx",
     "../src/components/files/FileEditorContent.tsx",

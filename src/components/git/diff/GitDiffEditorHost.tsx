@@ -48,6 +48,8 @@ export function GitDiffEditorHost({
   const openProject = useFileExplorerStore((state) => state.openProject);
   const revealPath = useFileExplorerStore((state) => state.revealPath);
   const gitDiffViewMode = useSettingsStore((state) => state.gitDiffViewMode);
+  const gitDiffOpenMode = useSettingsStore((state) => state.gitDiffOpenMode);
+  const gitDiffWrapLines = useSettingsStore((state) => state.gitDiffWrapLines);
   const gitDiffWhitespaceMode = useSettingsStore((state) => state.gitDiffWhitespaceMode);
   const gitDiffContextLines = useSettingsStore((state) => state.gitDiffContextLines);
   const updateSettings = useSettingsStore((state) => state.update);
@@ -234,8 +236,10 @@ export function GitDiffEditorHost({
         dataSource={dataSource}
         useTerminalTheme
         viewMode={gitDiffViewMode}
+        wrapLines={gitDiffWrapLines}
         diffOptions={diffOptions}
         onViewModeChange={(mode) => void updateSettings("gitDiffViewMode", mode)}
+        onWrapLinesChange={(wrapLines) => void updateSettings("gitDiffWrapLines", wrapLines)}
         onDiffOptionsChange={(options) => void handleDiffOptionsChange(options)}
         onClose={() => closeTab(context.key, activeTab.id)}
         review={{
@@ -249,6 +253,11 @@ export function GitDiffEditorHost({
           onNavigateToPreviousFile: () => selectAdjacentTab(-1),
           onNavigateToNextFile: () => selectAdjacentTab(1),
           onOpenSource: (lineNumber) => void openSource(lineNumber),
+          onPin: () => void updateSettings(
+            "gitDiffOpenMode",
+            gitDiffOpenMode === "editor" ? "dialog" : "editor",
+          ),
+          pinActive: gitDiffOpenMode === "editor",
         }}
       />
       <ConfirmDialog

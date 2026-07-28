@@ -1,6 +1,7 @@
-import { useCallback, type KeyboardEvent } from "react";
+import { useCallback, useMemo, type KeyboardEvent } from "react";
 import { useSettingsStore } from "../../../stores/settingsStore";
 import type { GitDiffOptions } from "../../../lib/gitDiffOptions";
+import { getTerminalTheme, isLightTerminalTheme } from "../../../lib/terminalThemes";
 import type { GitDiffViewMode } from "../../../stores/settingsStore";
 import { GitDiffContent } from "./GitDiffContent";
 import { GitDiffHeader } from "./GitDiffHeader";
@@ -19,8 +20,10 @@ export interface GitDiffViewerProps {
   closeOnRevert?: boolean;
   useTerminalTheme?: boolean;
   viewMode?: GitDiffViewMode;
+  wrapLines?: boolean;
   diffOptions?: GitDiffOptions;
   onViewModeChange?: (viewMode: GitDiffViewMode) => void;
+  onWrapLinesChange?: (wrapLines: boolean) => void;
   onDiffOptionsChange?: (options: GitDiffOptions) => void;
   review?: GitDiffReviewContext;
 }
@@ -33,12 +36,27 @@ export function GitDiffViewer({
   closeOnRevert = false,
   useTerminalTheme = false,
   viewMode = "split",
+  wrapLines = true,
   diffOptions,
   onViewModeChange,
+  onWrapLinesChange,
   onDiffOptionsChange,
   review,
 }: GitDiffViewerProps) {
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const terminalThemeName = useSettingsStore((state) => state.terminalThemeName);
+  const lightThemePalette = useSettingsStore((state) => state.lightThemePalette);
+  const darkThemePalette = useSettingsStore((state) => state.darkThemePalette);
+  const terminalThemeTone = useMemo(() => {
+    const theme = getTerminalTheme(
+      terminalThemeName,
+      resolvedTheme,
+      lightThemePalette,
+      darkThemePalette,
+    );
+    return isLightTerminalTheme(theme) ? "light" : "dark";
+  }, [darkThemePalette, lightThemePalette, resolvedTheme, terminalThemeName]);
+  const viewerThemeTone = useTerminalTheme ? terminalThemeTone : resolvedTheme;
   const handleReverted = useCallback(() => {
     onReverted?.();
     if (closeOnRevert) onClose?.();
@@ -81,7 +99,10 @@ export function GitDiffViewer({
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden font-mono"
-      data-theme-mode={resolvedTheme}
+      data-git-diff-theme={useTerminalTheme ? "terminal" : "application"}
+      data-git-diff-tone={viewerThemeTone}
+      data-git-diff-wrap={wrapLines}
+      data-theme-mode={viewerThemeTone}
       style={useTerminalTheme ? TERMINAL_DIFF_ROOT_STYLE : DEFAULT_DIFF_ROOT_STYLE}
       tabIndex={review ? 0 : undefined}
       onKeyDown={handleKeyDown}
@@ -95,6 +116,7 @@ export function GitDiffViewer({
           additions={review.additions}
           deletions={review.deletions}
           viewMode={viewMode}
+          wrapLines={wrapLines}
           diffOptions={diffOptions}
           canNavigatePrevious={canNavigatePrevious}
           canNavigateNext={canNavigateNext}
@@ -103,9 +125,11 @@ export function GitDiffViewer({
           onNavigatePrevious={() => navigate("previous")}
           onNavigateNext={() => navigate("next")}
           onViewModeChange={onViewModeChange}
+          onWrapLinesChange={onWrapLinesChange}
           onDiffOptionsChange={onDiffOptionsChange}
           onOpenSource={() => review.onOpenSource(controller.activeHunkNewStart)}
           onPin={review.onPin}
+          pinActive={review.pinActive}
           onRequestDiscard={requestDiscard}
           onClose={onClose}
         />
@@ -119,10 +143,11 @@ export function GitDiffViewer({
       )}
       <GitDiffContent
         controller={controller}
-        fallbackEditorTheme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+        fallbackEditorTheme={viewerThemeTone === "dark" ? "vs-dark" : "vs"}
         fileName={target.fileName}
         useTerminalTheme={useTerminalTheme}
         viewMode={viewMode}
+        wrapLines={wrapLines}
       />
       <GitDiffSelectionBar
         controller={controller}

@@ -13,7 +13,7 @@ interface GitDiffGenerationOptionsProps {
   onChange: (options: GitDiffOptions) => void;
 }
 
-const SELECT_CLASS = "ui-focus-ring h-6 min-w-0 rounded border bg-transparent px-1 text-[11px] text-text-primary";
+const SELECT_CLASS = "git-diff-toolbar-select ui-focus-ring h-6 min-w-0 rounded border px-1 text-[11px]";
 
 export function GitDiffGenerationOptions({
   options,

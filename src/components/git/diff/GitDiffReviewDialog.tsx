@@ -32,8 +32,8 @@ interface GitDiffReviewDialogProps {
     selectedLines: GitDiffSelectedLine[],
   ) => Promise<void>;
   onRequestDiscard: (path: string, name: string, status: string) => void;
-  onOpenSource: (target: GitDiffReviewTarget, lineNumber?: number) => void;
-  onPin: (target: GitDiffReviewTarget) => void;
+  onOpenSource: (target: GitDiffReviewTarget, lineNumber?: number) => Promise<boolean>;
+  onPin: (target: GitDiffReviewTarget) => Promise<boolean>;
 }
 
 export function GitDiffReviewDialog({
@@ -54,6 +54,7 @@ export function GitDiffReviewDialog({
 }: GitDiffReviewDialogProps) {
   const { t } = useI18n();
   const gitDiffViewMode = useSettingsStore((state) => state.gitDiffViewMode);
+  const gitDiffWrapLines = useSettingsStore((state) => state.gitDiffWrapLines);
   const gitDiffWhitespaceMode = useSettingsStore((state) => state.gitDiffWhitespaceMode);
   const gitDiffContextLines = useSettingsStore((state) => state.gitDiffContextLines);
   const updateSettings = useSettingsStore((state) => state.update);
@@ -131,10 +132,22 @@ export function GitDiffReviewDialog({
     setActiveTargetId(nextTarget.id);
   }, [activeIndex, targets]);
 
+  const handleOpenSource = useCallback(async (
+    target: GitDiffReviewTarget,
+    lineNumber?: number,
+  ) => {
+    if (await onOpenSource(target, lineNumber)) onClose();
+  }, [onClose, onOpenSource]);
+
+  const handlePin = useCallback(async (target: GitDiffReviewTarget) => {
+    if (await onPin(target)) onClose();
+  }, [onClose, onPin]);
+
   return (
     <GitDiffDialogFrame
       open={open}
       onClose={onClose}
+      useTerminalTheme
       ariaLabel={t("git.diff.reviewDialogNamed", {
         fileName: activeTarget?.fileName ?? initialFilePath,
       })}
@@ -145,9 +158,12 @@ export function GitDiffReviewDialog({
           target={activeTarget}
           dataSource={dataSource}
           onClose={onClose}
+          useTerminalTheme
           viewMode={gitDiffViewMode}
+          wrapLines={gitDiffWrapLines}
           diffOptions={diffOptions}
           onViewModeChange={(mode) => void updateSettings("gitDiffViewMode", mode)}
+          onWrapLinesChange={(wrapLines) => void updateSettings("gitDiffWrapLines", wrapLines)}
           onDiffOptionsChange={(options) => void handleDiffOptionsChange(options)}
           review={{
             fileIndex: activeIndex,
@@ -159,8 +175,8 @@ export function GitDiffReviewDialog({
             canNavigateToNextFile: activeIndex + 1 < targets.length,
             onNavigateToPreviousFile: () => selectAdjacentFile(-1),
             onNavigateToNextFile: () => selectAdjacentFile(1),
-            onOpenSource: (lineNumber) => onOpenSource(activeTarget, lineNumber),
-            onPin: () => onPin(activeTarget),
+            onOpenSource: (lineNumber) => void handleOpenSource(activeTarget, lineNumber),
+            onPin: () => void handlePin(activeTarget),
           }}
         />
       )}

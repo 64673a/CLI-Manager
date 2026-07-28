@@ -4,11 +4,13 @@ import {
   DialogContent,
   DialogTitle,
 } from "../../ui/dialog";
+import { DEFAULT_DIFF_ROOT_STYLE, TERMINAL_DIFF_ROOT_STYLE } from "./theme";
 
 interface GitDiffDialogFrameProps {
   open: boolean;
   onClose: () => void;
   ariaLabel: string;
+  useTerminalTheme?: boolean;
   children: ReactNode;
 }
 
@@ -16,6 +18,7 @@ export function GitDiffDialogFrame({
   open,
   onClose,
   ariaLabel,
+  useTerminalTheme = false,
   children,
 }: GitDiffDialogFrameProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -30,9 +33,8 @@ export function GitDiffDialogFrame({
         className="h-[85vh] w-[calc(100vw-1rem)] max-w-6xl overflow-hidden rounded-lg border p-0 shadow-2xl sm:w-[calc(100vw-2rem)]"
         overlayClassName="z-[100] bg-black/60"
         style={{
+          ...(useTerminalTheme ? TERMINAL_DIFF_ROOT_STYLE : DEFAULT_DIFF_ROOT_STYLE),
           zIndex: 101,
-          backgroundColor: "var(--surface)",
-          borderColor: "var(--border)",
         }}
         onOpenAutoFocus={(event) => {
           previousFocusRef.current = document.activeElement instanceof HTMLElement
