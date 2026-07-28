@@ -6,6 +6,8 @@
 
 - **Codex / Claude 提问通知 Hook**：Codex `request_user_input` 与 Claude `AskUserQuestion` 触发前会通过精确 `PreToolUse` matcher 上报等待选择或回答通知，复用现有应用内、系统及第三方通知链路；本地、WSL、cc-switch 通用配置和 SSH Agent `0.1.4` 安装模板保持一致，旧安装会显示为部分安装并可通过重新安装升级。
 
+- **SSH Codex 会话远程托管**：已停止的 SSH Codex 会话可从桌面宠物选择 Telegram、飞书、微信或企业微信进行托管；CLI-Manager 通过本机 cc-connect 和原生 OpenSSH 在原远端目录恢复同一 `cliSessionId`，复用 SSH Config、Agent、私钥、已保存密码、跳板机与代理配置，并在取消托管后恢复为本地 SSH 终端。托管前会先验证平台会话、SSH 凭据、远端目录和 Codex app-server，远端审批、完成及失败状态继续进入现有跨平台通知链。
+
 ### Git Diff 审阅
 
 - Git 变更 Diff 弹窗新增按当前筛选顺序的文件与 Hunk 导航，支持 `F7` / `Shift+F7`、首尾边界提示、仓库相对路径、文件序号和增删统计；Split / Unified 显示模式会持久化并参与偏好同步，源码跳转可定位到当前 Hunk，且本地、WSL、SSH 与嵌套仓库共用同一审阅交互。
@@ -18,6 +20,8 @@
 ### 修复
 
 - 终端切换 Tab 时，右侧文件浏览器仅在本地目录、Worktree 目录或 SSH 主机/远端根目录实际变化后重新加载；相同目录复用已加载文件树，保留展开状态与滚动位置。
+- **桌宠 Agent 状态与 SSH 托管识别**：Agent 终端改由 Hook/daemon 回合事件权威驱动，PTY 重绘和长期存活的 Codex/SSH 进程不再把已结束任务重新显示为“工作中”；缺少 `cliSessionId` 的 SSH Codex 会话会继续显示在托管列表中，并在明确停止后通过远端 Agent 历史进行唯一、限时且排除已占用 ID 的安全识别，无法唯一匹配时明确拒绝而不猜测。
+- **SSH 托管状态门禁**：SSH Codex 会话仅在 Hook/daemon 明确上报完成或失败，或 PTY 已退出/出错时允许托管；Hook 未安装、事件丢失或恢复后状态未知时失败关闭，避免第二个 app-server 中断桌面进程仍持有的线程。预检继续只验证平台、SSH 与 app-server 基础链路，代理严格绑定原 `cliSessionId`，启动失败时恢复本地会话。
 - **Windows 桌宠任务栏缩略图**：桌宠窗口首次显示后会重新应用跳过任务栏属性，避免部分 Windows 11 环境在冷启动时把预创建的桌宠窗口重新登记到任务栏；关闭后再开启与后续显示路径保持一致。
 - **Claude / Codex 历史转换**：生成新会话的非破坏性转换不再复用删除、恢复操作的目标进程排他检查；Codex 正在运行时也可执行 Claude -> Codex 转换，共享 JSONL 索引改为单次追加写，SQLite 注册继续等待真实写锁。转换结果直接携带后端已解析的目标详情，并以写入后的真实 Claude 项目目录名作为项目键，不再因目标文件尚未进入索引或 Windows 目录大小写复用而报 `session_file_not_indexed`，也不会让“继续对话”误用转换前的 CLI。若目标 CLI 没有独立项目配置、但原 `cwd` 唯一命中项目目录，会直接执行目标 CLI 裸恢复命令，不再弹出项目选择框或泄漏原 CLI 启动配置。备份恢复仍保持运行态保护。
 - **历史会话批量删除**：修复勾选范围包含 Subagent 子会话时批量删除必然失败并报 `history_subagent_mutation_not_allowed` 的问题。子会话由后端随主会话连带删除，不再单独进入删除队列；删除主会话后列表同步移除其子会话行，避免残留指向已删除文件的孤儿条目；仅勾选子会话时给出说明提示。

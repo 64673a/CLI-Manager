@@ -18,6 +18,7 @@ import type {
   SshToolSource,
 } from "../../../lib/types";
 import { useI18n, type TranslationKey } from "../../../lib/i18n";
+import { useSshDirectoryBrowser } from "../../../hooks/useSshDirectoryBrowser";
 import { useBackgroundOperationStore } from "../../../stores/backgroundOperationStore";
 import { useSshAgentIntegrationStore } from "../../../stores/sshAgentIntegrationStore";
 import { useProjectStore } from "../../../stores/projectStore";
@@ -26,11 +27,6 @@ import { Button } from "../../ui/button";
 import { ConfirmDialog } from "../../ConfirmDialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../../ui/dialog";
 import { Input } from "../../ui/input";
-
-interface SshDirectoryEntry {
-  name: string;
-  path: string;
-}
 
 interface Props {
   open: boolean;
@@ -161,10 +157,15 @@ export function SshCliIntegrationDialog({ open, host, hosts, onOpenChange }: Pro
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pickerSource, setPickerSource] = useState<SshToolSource | null>(null);
-  const [pickerPath, setPickerPath] = useState("/");
-  const [directories, setDirectories] = useState<SshDirectoryEntry[]>([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState("");
+  const {
+    path: pickerPath,
+    setPath: setPickerPath,
+    entries: directories,
+    loading: pickerLoading,
+    error: pickerError,
+    load: loadPickerDirectories,
+    close: closePickerDirectories,
+  } = useSshDirectoryBrowser(host, hosts);
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<SshAgentProbeResult | null>(null);
   const [probeError, setProbeError] = useState("");
@@ -416,23 +417,13 @@ export function SshCliIntegrationDialog({ open, host, hosts, onOpenChange }: Pro
 
   const loadDirectories = async (source: SshToolSource, path: string) => {
     if (!host) return;
-    const normalizedPath = path.trim() || "/";
     setPickerSource(source);
-    setPickerPath(normalizedPath);
-    setPickerLoading(true);
-    setPickerError("");
-    try {
-      const entries = await invoke<SshDirectoryEntry[]>("ssh_list_directories", {
-        spec: buildSshConnectionSpec(host, hosts),
-        path: normalizedPath,
-      });
-      setDirectories(entries);
-    } catch (nextError) {
-      setDirectories([]);
-      setPickerError(String(nextError));
-    } finally {
-      setPickerLoading(false);
-    }
+    await loadPickerDirectories(path);
+  };
+
+  const closeDirectoryPicker = () => {
+    setPickerSource(null);
+    closePickerDirectories();
   };
 
   const save = async () => {
@@ -1011,7 +1002,7 @@ export function SshCliIntegrationDialog({ open, host, hosts, onOpenChange }: Pro
         onConfirm={() => { if (confirmAction) void runAgentManagement(confirmAction); }}
       />
 
-      <Dialog open={pickerSource !== null} onOpenChange={(nextOpen) => { if (!nextOpen) setPickerSource(null); }}>
+      <Dialog open={pickerSource !== null} onOpenChange={(nextOpen) => { if (!nextOpen) closeDirectoryPicker(); }}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-xl p-0">
           <div className="border-b border-border px-4 py-3">
             <DialogTitle>{t("settings.sshHosts.cliIntegration.pickerTitle")}</DialogTitle>
@@ -1026,7 +1017,7 @@ export function SshCliIntegrationDialog({ open, host, hosts, onOpenChange }: Pro
                 <ArrowUp className="h-4 w-4" />
               </Button>
               <Input value={pickerPath} onChange={(event) => setPickerPath(event.target.value)} className="flex-1 font-mono text-sm" />
-              <Button type="button" variant="outline" onClick={() => { if (pickerSource) void loadDirectories(pickerSource, pickerPath); }}>{t("common.refresh")}</Button>
+              <Button type="button" variant="outline" onClick={() => { if (pickerSource) void loadPickerDirectories(pickerPath, { force: true }); }}>{t("common.refresh")}</Button>
             </div>
             <div className="max-h-72 min-h-48 overflow-y-auto rounded-md border border-border p-1">
               {pickerLoading && <div className="p-4 text-sm text-text-muted">{t("common.loading")}</div>}
@@ -1040,10 +1031,10 @@ export function SshCliIntegrationDialog({ open, host, hosts, onOpenChange }: Pro
             </div>
           </div>
           <DialogFooter className="border-t border-border px-4 py-3">
-            <Button type="button" variant="outline" onClick={() => setPickerSource(null)}>{t("common.cancel")}</Button>
+            <Button type="button" variant="outline" onClick={closeDirectoryPicker}>{t("common.cancel")}</Button>
             <Button type="button" onClick={() => {
               if (pickerSource) setRoots((current) => ({ ...current, [pickerSource]: pickerPath.trim() || "/" }));
-              setPickerSource(null);
+              closeDirectoryPicker();
             }}>{t("configModal.ssh.selectCurrentDirectory")}</Button>
           </DialogFooter>
         </DialogContent>

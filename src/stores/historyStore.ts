@@ -1109,6 +1109,30 @@ export async function fetchRemoteLatestProjectSessionDetail(
   return { context: synced, result: normalizeDetail(detailRaw) };
 }
 
+export async function fetchRemoteProjectSessionSummaries(
+  project: Project,
+  limit = 100,
+): Promise<{ context: SshAgentHistoryContext; summaries: HistorySessionSummary[] }> {
+  const initial = await buildSshAgentHistoryContext(project);
+  const context = await syncRemoteHistoryContext(initial, {
+    reset: true,
+    limit,
+    forceRefresh: true,
+  });
+  if (!context.sourceInstanceId) return { context, summaries: [] };
+  const raw = await invoke<unknown[]>("history_remote_list_cached", {
+    sourceInstanceId: context.sourceInstanceId,
+    projectPath: context.projectPaths[0] ?? null,
+    query: null,
+    limit,
+    offset: 0,
+  });
+  return {
+    context,
+    summaries: (raw ?? []).map((item) => normalizeSummary(item)),
+  };
+}
+
 function getHistoryPathCacheKey(): string {
   const { claudeConfigDir, codexConfigDir } = getHistoryPathArgsSync();
   return `${claudeConfigDir ?? "__default__"}|${codexConfigDir ?? "__default__"}`;

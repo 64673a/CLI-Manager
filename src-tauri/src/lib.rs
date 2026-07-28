@@ -925,6 +925,7 @@ pub fn run() {
             commands::cc_connect::cc_connect_get_logs,
             commands::cc_connect::handoff::cc_connect_handoff_status,
             commands::cc_connect::handoff::cc_connect_handoff_platforms,
+            commands::cc_connect::handoff::cc_connect_handoff_preflight,
             commands::cc_connect::handoff::cc_connect_handoff_start,
             commands::cc_connect::handoff::cc_connect_handoff_cancel,
             commands::cc_connect::handoff_notification::cc_connect_handoff_notification_status,

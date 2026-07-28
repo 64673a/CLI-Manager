@@ -244,7 +244,7 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 ### 3. Contracts
 
 - Both the detail action and list context-menu action must enter the same resume flow.
-- The detail action may resume only when the loaded detail identity (source, session id, and file path) matches the currently selected history view.
+- The detail action may resume only when the loaded detail identity matches the currently selected history view. Local/WSL history uses source, session id, and file path; SSH history uses source, session id, and the complete stable `session_ref` tuple (`sourceId`, `sourceInstanceId`, `sourceSessionId`, `transportKind`) because remote summaries and details intentionally expose no local `file_path`.
 - Match maintained projects by history `cwd` first, then by `project_key`, and require the project's CLI type to match the history source.
 - One candidate resumes directly; multiple candidates require explicit selection; cancel creates no terminal.
 - The selected project supplies `cli_args`, provider overrides, environment variables, shell, and Worktree overrides.
@@ -257,7 +257,7 @@ if (existingProject && matchesProjectSource(existingProject, group.source)) cont
 ### 4. Validation & Error Matrix
 
 - Invalid session ID or unsupported source -> localized error, no terminal.
-- Missing or stale detail whose identity differs from the selected view -> keep resume disabled and create no terminal.
+- Missing or stale detail whose identity differs from the selected view -> keep resume disabled and create no terminal. An SSH detail with an empty local file path is valid only when both sides carry the same complete SSH `session_ref`; missing, mixed-transport, or changed remote references remain rejected.
 - Zero compatible project candidates + one exact local/WSL `cwd` project -> resume directly with the bare source command and no project launch configuration.
 - Zero compatible project candidates + zero/multiple exact `cwd` projects -> show all projects plus `Use New Window`; cancel -> no terminal.
 - `Use New Window` + valid history working directory -> create an unscoped terminal in that directory, then run the resume command.

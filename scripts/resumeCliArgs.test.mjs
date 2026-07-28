@@ -57,7 +57,11 @@ const saveSessionPath = transpile(
   },
 );
 
-const { stripResumeCliArgs } = await import(
+const {
+  detectCodexLaunchSessionSelection,
+  extractCodexResumeSessionId,
+  stripResumeCliArgs,
+} = await import(
   pathToFileURL(join(tempDir, "resumeCliArgs.mjs")).href
 );
 const { appendResumeCliArgs } = await import(pathToFileURL(projectStartupPath).href);
@@ -65,6 +69,36 @@ const { buildResumeCliArgs } = await import(pathToFileURL(saveSessionPath).href)
 
 const OLD_ID = "019f2c9e-ed25-73e1-a883-86d578fc9e08";
 const NEW_ID = "019f5e8b-2d11-76d1-89b4-a0c0ff20d111";
+
+test("extracts an explicit Codex resume session id", () => {
+  const cases = [
+    [`codex resume ${OLD_ID}`, OLD_ID],
+    [`codex resume --no-alt-screen ${OLD_ID}`, OLD_ID],
+    [`codex resume --profile provider-a --model o3 ${OLD_ID}`, OLD_ID],
+    [`"C:\\tools\\codex.exe" resume "${OLD_ID}"`, OLD_ID],
+    ["codex resume --last", null],
+    ["codex resume --last continue", null],
+    [`claude resume ${OLD_ID}`, null],
+  ];
+
+  for (const [command, expected] of cases) {
+    assert.equal(extractCodexResumeSessionId(command), expected, command);
+  }
+});
+
+test("classifies Codex launch session selection modes", () => {
+  const cases = [
+    ["codex", { kind: "new" }],
+    [`codex resume --no-alt-screen ${OLD_ID}`, { kind: "explicit", sessionId: OLD_ID }],
+    ["codex resume --no-alt-screen --last", { kind: "last" }],
+    ["codex resume", { kind: "interactive" }],
+    [`claude resume ${OLD_ID}`, { kind: "new" }],
+  ];
+
+  for (const [command, expected] of cases) {
+    assert.deepEqual(detectCodexLaunchSessionSelection(command), expected, command);
+  }
+});
 
 test("strips supported Codex and Claude resume fragments", () => {
   const cases = [
