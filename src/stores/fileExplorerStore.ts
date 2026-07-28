@@ -13,7 +13,7 @@ import type {
 } from "../lib/types";
 import { logError, recordCrashActivity } from "../lib/logger";
 import { translateCurrent } from "../lib/i18n";
-import { isSameProjectFileContext } from "../lib/terminalProject";
+import { isSameProjectFileContext, isSameProjectFileLocation } from "../lib/terminalProject";
 import { projectSupportsCapability } from "../lib/projectCapabilities";
 import { activateProjectFileSurface } from "./gitDiffWorkspaceStore";
 import {
@@ -311,17 +311,6 @@ const remoteFileContextReleases = new Map<string, Promise<void>>();
 
 export function isDefaultCollapsedDirectoryName(name: string): boolean {
   return DEFAULT_COLLAPSED_DIRECTORY_NAME_SET.has(name.toLowerCase());
-}
-
-function isDefaultCollapsedPath(path: string): boolean {
-  if (!path) return false;
-  return path
-    .split("/")
-    .some(isDefaultCollapsedDirectoryName);
-}
-
-function pruneDefaultCollapsedPaths(paths: Set<string>): Set<string> {
-  return new Set(Array.from(paths).filter((path) => path === "" || !isDefaultCollapsedPath(path)));
 }
 
 function collapsePath(paths: Set<string>, targetPath: string): Set<string> {
@@ -664,28 +653,32 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     if (!projectSupportsCapability(project, "files")) {
       throw new Error("remote_project_capability_unsupported:files");
     }
-    const requestSeq = ++openProjectRequestSeq;
     const current = get().project;
-    const keepCurrentProject = isSameProjectFileContext(current, project);
+    if (isSameProjectFileLocation(current, project)) {
+      if (current !== project) set({ project });
+      return;
+    }
+
+    const requestSeq = ++openProjectRequestSeq;
     const previousRemoteFileContext = get().remoteFileContext;
     set({
       project,
       remoteFileContext: null,
-      tree: keepCurrentProject ? get().tree : [],
+      tree: [],
       loading: true,
       searchMode: "files",
       searchQuery: "",
       searchResults: [],
       contentSearchResults: [],
       searchLoading: false,
-      expandedPaths: keepCurrentProject ? pruneDefaultCollapsedPaths(get().expandedPaths) : new Set([""]),
-      selectedTreePath: keepCurrentProject ? get().selectedTreePath : null,
-      openFiles: keepCurrentProject ? get().openFiles : [],
-      activeFilePath: keepCurrentProject ? get().activeFilePath : null,
-      activeFile: keepCurrentProject ? get().activeFile : null,
-      searchNavigationTarget: keepCurrentProject ? get().searchNavigationTarget : null,
-      gitChanges: keepCurrentProject ? get().gitChanges : [],
-      clipboard: keepCurrentProject ? get().clipboard : null,
+      expandedPaths: new Set([""]),
+      selectedTreePath: null,
+      openFiles: [],
+      activeFilePath: null,
+      activeFile: null,
+      searchNavigationTarget: null,
+      gitChanges: [],
+      clipboard: null,
     });
     void releaseRemoteFileContext(previousRemoteFileContext);
     let remoteContext: SshRemoteFileContext | null = null;
