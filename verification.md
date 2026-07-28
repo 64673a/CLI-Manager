@@ -792,3 +792,25 @@
 - GitNexus `detect-changes` 因本地没有该仓库索引而不可用；降级刷新 codebase-memory moderate 索引并执行工作区变更检测，确认仅涉及 `desktop_pet_window_sync` 及预期的 CHANGELOG、验证记录。
 - `npm run tauri:build:local -- --bundles nsis`：通过，仅构建 NSIS；安装包为 `src-tauri/target/release/bundle/nsis/CLI-Manager_1.3.1_x64-setup.exe`，大小 17,093,981 字节，SHA-256 为 `51956099BB6246982D1FE7E64A4B9C321A0AF795E24BB5332D1306A654B037C0`。
 - 自动化验证无法直接断言 Windows Explorer 的任务栏缩略图状态，冷启动、关闭后重开及任务栏/Alt+Tab 表现需用本安装包在受影响的 Windows 11 机器上冒烟确认。
+
+## SSH 历史会话详情身份校验修复（2026-07-28）
+
+### 根因与发现清单
+
+- 根因位于历史列表与详情的前端身份校验边界：SSH 缓存列表和远端详情按协议都将本地 `file_path` 留空，但新加入的共享校验要求文件路径非空，因此合法 SSH 详情在后端完成远端身份验证后仍会被前端固定拒绝为 `history_session_identity_mismatch`。
+- 已修改 `src/lib/historySessionIdentity.ts`：本地/WSL 继续严格比较 source、session id 和规范化文件路径；只有双方都是 SSH 时才改用完整稳定 `session_ref`，并校验其 source、source instance、source session 和 transport 与顶层身份一致。
+- 已修改 `scripts/historySessionIdentity.test.mjs` 与前端历史契约，覆盖无本地文件路径的正常 SSH 详情，以及实例变化、缺少引用、传输类型混用和引用字段漂移的拒绝路径。
+- 已复核但未修改 `historyStore.openSession`、`historyStore.openSearchHit`、`HistoryWorkspace` 恢复按钮、Rust `history_remote_get_session`、远端 SSH Agent `history::get` 和远端历史目录；后端已有完整远端身份验证，问题只发生在响应返回后的共享前端守卫。
+- codebase-memory 入向影响分析标记为 CRITICAL：共享函数同时控制详情打开、搜索命中、收藏快照回退和恢复按钮，因此修复保留非 SSH 语义并保持缺失/漂移身份 fail-closed。
+
+### 场景覆盖与验证结果
+
+- SSH 列表详情、搜索结果详情和恢复按钮接受同一完整远端会话引用；离线收藏快照只有保留相同 SSH 引用时才可回退。
+- 本地、WSL、转换会话仍必须提供相同非空文件路径；旧的空路径对象不会因本次修复被放行。
+- `node scripts/historySessionIdentity.test.mjs`：5 项通过。
+- `node scripts/historyConversionState.test.mjs`：3 项通过。
+- `node scripts/historyListRefreshState.test.mjs`：4 项通过。
+- `node scripts/historyResumeProject.test.mjs`：3 项通过。
+- `node scripts/remoteHandoff.test.mjs`：4 项通过。
+- `npx tsc --noEmit`、`npm run build`、`git diff --check`：通过。
+- 尚未连接真实 SSH 主机点击截图中的历史记录做交互冒烟；该项需由安装包或开发模式连接真实远端验证。
