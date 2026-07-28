@@ -814,3 +814,21 @@
 - `node scripts/remoteHandoff.test.mjs`：4 项通过。
 - `npx tsc --noEmit`、`npm run build`、`git diff --check`：通过。
 - 尚未连接真实 SSH 主机点击截图中的历史记录做交互冒烟；该项需由安装包或开发模式连接真实远端验证。
+
+## SSH 主机目录选择器响应优化（2026-07-28）
+
+### 根因与发现清单
+
+- 根因位于 SSH 目录选择器的传输边界：项目路径与 CLI 配置目录两个选择器仍直接调用 `ssh_list_directories`，每进入一级目录都会启动新的 OpenSSH 进程并重复握手，也没有复用已读取目录；此前的 SSH 文件树优化没有覆盖这两个入口。
+- 新增 `sshRemoteDirectories` 与 `useSshDirectoryBrowser`：已安装兼容 SSH Agent 时复用现有只读 bridge，未安装、不可用或返回受限结果时保持原有 OpenSSH 查询；目录结果使用 96 项 LRU 上限，显式刷新绕过缓存。
+- 已修改 `ConfigModal` 与 `SshCliIntegrationDialog` 两个真实入口，统一接入缓存、请求序号和关闭/切换取消逻辑；旧请求不能覆盖新路径，关闭后不会继续触发新的回退连接。
+- 已复核但未修改 `ssh_list_directories`、`ssh_remote_file_list`、daemon 的只读 lane、远端 Agent 文件协议和 consumer 释放命令；本次不改变认证、代理、跳板机、路径校验或已发布 Agent 协议。
+
+### 场景覆盖与验证结果
+
+- Agent 已安装时，同一次选择器浏览只支付首次 SSH 握手；返回上级或重复进入目录直接命中缓存，刷新按钮强制重新读取。Agent 未安装、版本不兼容、daemon 不可用或目录条目达到 Agent 上限时继续使用原 OpenSSH 路径。
+- 项目目录与 CLI 配置目录、根目录与多级目录、快速连续切换、加载中关闭、切换主机、密钥/Agent/凭据引用/SSH Config/代理/跳板机均复用原结构化连接参数；交互式认证仍按既有契约拒绝无 PTY 浏览。
+- `npx tsc --noEmit`：通过。
+- `npm run build`：通过，完成 6702 个模块转换。
+- `git diff --check`：通过，仅有仓库现有 Windows 行尾提示。
+- 尚未连接真实高延迟 SSH 主机做首次握手与后续逐级浏览的耗时对比；需在开发模式或安装包中完成实际网络冒烟。
