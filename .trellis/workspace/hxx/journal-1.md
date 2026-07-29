@@ -1979,3 +1979,36 @@ WebDAV 工作区快照现同步可移植 SSH 主机分组、主机档案及项�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 58: 修复 Pi 终端消息不可见
+
+**Date**: 2026-07-29
+**Task**: 修复 Pi 终端消息不可见
+**Branch**: `master`
+
+### Summary
+
+定位 Issue #177 为 OSC 133 扫描器遗漏相邻集成序列之间文本；修复归一化、拆分 Pi 诊断职责，并补齐任意 frame 边界回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6cbfcb77` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
