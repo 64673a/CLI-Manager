@@ -1464,6 +1464,37 @@ invoke("pty_write", { sessionId, data });
 
 **Tests**: Run npx tsc --noEmit; manually verify Ctrl/Cmd+A, Shift+Left/Right, collapse with Left/Right, Backspace/Delete, typing to replace a selection, Ctrl/Cmd+C selection copy versus Ctrl+C interrupt, and switching sessions after a selection.
 
+### Convention: Pi terminal diagnostics stay outside XTermTerminal
+
+**What**: Pi-specific session detection and output diagnostics live in
+`src/terminal/browser/TerminalPiCompatibility.ts`. `XTermTerminal` only supplies session context
+and connects the diagnostic object to the shared display hook.
+
+**Why**: Pi issue #177 crosses ConPTY, daemon transport, frontend normalization, xterm parsing, and
+rendering. Live diagnostics proved that the formal OSC 133 user-message block reaches the frontend,
+then disappears during OSC normalization. The integration scanner preserved each OSC sequence but
+failed to copy the ordinary text between two managed OSC sequences, leaving only the padded
+background row. `DECSET/DECRST 2026` filtering and viewport refresh do not fix this data loss.
+
+**Contracts**:
+
+- Recognize Pi only from the exact `pi` project/title tool or a startup command whose executable
+  token is `pi`, `pi.cmd`, `pi.exe`, or `pi.ps1`; strings such as `pip install pi` are unrelated.
+- Pi compatibility code must not rewrite PTY output without a reproduced failing byte sequence and
+  a regression test proving the rewrite fixes it.
+- OSC integration scanning must preserve the bytes before every recognized OSC sequence, including
+  ordinary CSI/text between consecutive OSC 133/633/7 sequences. Test every possible daemon-frame
+  split point around the sequence and message body.
+- Development diagnostics may observe raw frame, normalized text, and xterm write-commit state,
+  but must remain silent in production and for non-Pi sessions.
+- Diagnostic payloads must be bounded and must not persist complete terminal content.
+- `useTerminalDisplay` exposes only tool-neutral optional callbacks; Pi branching stays out of the
+  shared transport and write/ACK path.
+
+**Tests**: Run `node --test scripts/terminalOsc.test.mjs scripts/terminalPiCompatibility.test.mjs`;
+assert Pi context detection, bounded summaries, production/non-Pi silence, OSC 10/11 filtering,
+and byte-for-byte Pi message preservation at every frame split.
+
 ### Common Mistake: Letting xterm sync updates clear the screen while the user is reading scrollback
 
 **Symptom**: During Codex / Claude Code / Copilot-style TUI streaming, scrolling upward to inspect older output becomes impossible, or a later resize causes the current screen to be replayed into scrollback.

@@ -66,6 +66,10 @@ import { getOsPlatform, normalizeShellKey, type OsPlatform } from "../lib/shell"
 import { Portal } from "./ui/Portal";
 import { useProjectStore } from "../stores/projectStore";
 import { formatStartupInputForPty, useTerminalStore } from "../stores/terminalStore";
+import {
+  createPiTerminalDiagnostics,
+  type PiTerminalDiagnostics,
+} from "../terminal/browser/TerminalPiCompatibility";
 import { shouldReflowTerminalCursorLine } from "../terminal/browser/TerminalReflowPolicy";
 import { terminalProcessManager } from "../terminal/core/TerminalProcessManager";
 import type { TerminalProcessTraits } from "../terminal/transport/PtyHostSocket";
@@ -404,6 +408,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   const displayNormalizeOutputRef = useRef<(text: string) => string>((text) => text);
   const displayTransformOutputRef = useRef<(text: string) => string>((text) => text);
   const displayAfterWriteRef = useRef<((terminal: Terminal) => void) | null>(null);
+  const piTerminalDiagnosticsRef = useRef<PiTerminalDiagnostics | null>(null);
   const cleanedAttachmentRootsRef = useRef<Set<string>>(new Set());
   const terminalScrollbackCustomEnabled = useSettingsStore((s) => s.terminalScrollbackCustomEnabled);
   const terminalScrollbackRows = useSettingsStore((s) => s.terminalScrollbackRows);
@@ -568,6 +573,26 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     clearSuggestionGhost();
   }, [terminalInputSuggestionProvider]);
 
+  const getSessionToolContext = () => {
+    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
+    const project = session?.projectId
+      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
+      : null;
+    return {
+      projectTool: project?.cli_tool.trim().toLowerCase() ?? "",
+      startupCmd: session?.startupCmd ?? "",
+      titleTool: session?.title.match(/\(([^()]*)\)\s*$/)?.[1]?.trim().toLowerCase() ?? "",
+      outputHint: session?.initialTerminalOutput ?? "",
+    };
+  };
+  if (piTerminalDiagnosticsRef.current?.sessionId !== sessionId) {
+    piTerminalDiagnosticsRef.current = createPiTerminalDiagnostics(
+      sessionId,
+      (message, payload) => logInfo(message, payload),
+    );
+  }
+  piTerminalDiagnosticsRef.current.updateContext(getSessionToolContext());
+
   const {
     syncWebglRenderer,
     scheduleHiddenWebglDispose,
@@ -596,6 +621,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     normalizeOutputRef: displayNormalizeOutputRef,
     transformOutputRef: displayTransformOutputRef,
     afterTerminalWriteRef: displayAfterWriteRef,
+    outputDiagnosticsRef: piTerminalDiagnosticsRef,
     onPtyOutputListenError: (err) => logError("Failed to listen PTY output", { sessionId, err }),
   });
 

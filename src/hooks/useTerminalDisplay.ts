@@ -29,6 +29,11 @@ type NormalizeTerminalOutput = (text: string) => string;
 type TransformTerminalOutput = (text: string) => string;
 type AfterTerminalWrite = (terminal: Terminal) => void;
 
+export interface TerminalOutputDiagnostics {
+  onFrame(frame: TerminalBinaryFrame, rawText: string, normalizedText: string): void;
+  onWriteCommitted(terminal: Terminal, writtenText: string): void;
+}
+
 interface PendingTerminalWrite {
   text: string;
   charCount: number;
@@ -59,6 +64,7 @@ interface UseTerminalDisplayOptions {
   normalizeOutputRef: RefObject<NormalizeTerminalOutput>;
   transformOutputRef: RefObject<TransformTerminalOutput>;
   afterTerminalWriteRef: RefObject<AfterTerminalWrite | null>;
+  outputDiagnosticsRef?: RefObject<TerminalOutputDiagnostics | null>;
   onPtyOutputListenError: (err: unknown) => void;
   onViewportRefreshNeeded?: () => void;
 }
@@ -98,6 +104,7 @@ export function useTerminalDisplay({
   normalizeOutputRef,
   transformOutputRef,
   afterTerminalWriteRef,
+  outputDiagnosticsRef,
   onPtyOutputListenError,
   onViewportRefreshNeeded,
 }: UseTerminalDisplayOptions): UseTerminalDisplayResult {
@@ -298,6 +305,7 @@ export function useTerminalDisplay({
       terminal.write(transformOutputRef.current(combined), () => {
         ptyWriteInProgressRef.current = false;
         if (cancelled || terminalRef.current !== terminal) return;
+        outputDiagnosticsRef?.current?.onWriteCommitted(terminal, combined);
         handleTerminalWriteCommitted(terminal);
         commitPending();
         schedulePendingWrite();
@@ -307,6 +315,7 @@ export function useTerminalDisplay({
       const payload = delivery.frame;
       const rawText = textDecoder.decode(payload.data, { stream: true });
       const text = normalizeOutputRef.current(rawText);
+      outputDiagnosticsRef?.current?.onFrame(payload, rawText, text);
       if (!text && payload.kind !== "replay" && payload.kind !== "reset") {
         delivery.commit(rawText.length);
         return;
@@ -354,7 +363,9 @@ export function useTerminalDisplay({
           if (entry.cols > 0 && entry.rows > 0 && (terminal.cols !== entry.cols || terminal.rows !== entry.rows)) {
             terminal.resize(entry.cols, entry.rows);
           }
-          const text = normalizeOutputRef.current(textDecoder.decode(entry.data, { stream: true }));
+          const rawText = textDecoder.decode(entry.data, { stream: true });
+          const text = normalizeOutputRef.current(rawText);
+          outputDiagnosticsRef?.current?.onFrame(entry, rawText, text);
           if (!text) {
             terminalProcessManager.acknowledgeOutput(sessionId, entry.sequence, 0);
             continue;
@@ -362,6 +373,7 @@ export function useTerminalDisplay({
           await new Promise<void>((resolve) => {
             terminal.write(transformOutputRef.current(text), () => {
               if (terminalRef.current === terminal) {
+                outputDiagnosticsRef?.current?.onWriteCommitted(terminal, text);
                 handleTerminalWriteCommitted(terminal);
                 terminalProcessManager.acknowledgeOutput(sessionId, entry.sequence, 0);
               }
