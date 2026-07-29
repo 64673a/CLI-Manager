@@ -2,6 +2,10 @@
 
 ## [V1.3.3] - 2026-07-29
 
+### 调整
+
+- **R2 发布域名动态注入**：GitHub Actions 的 `R2_PUBLIC_BASE_URL` 现在是桌面更新器、SSH Agent 清单、安装命令及发布脚本的唯一构建配置源；发布前统一校验 HTTPS Origin，并继续保留 GitHub Release 备用源与静态更新签名公钥，后续更换 R2 自定义域名无需全仓库替换。
+
 ### 修复
 
 - **SSH Agent Hook 动态数量校验**：主程序不再硬编码 Claude/Codex Hook 条目数量，改为校验 Agent 上报数量的非零、安全上限及已管理条目关系；兼容新增提问 Hook 的 Agent 和旧版 Agent，无需仅因 Hook 数量变化重新部署远端 Agent。
