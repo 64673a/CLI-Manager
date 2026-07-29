@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 58
-- **Last Active**: 2026-07-29
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 59
+- **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~2014 | Active |
+| `journal-2.md` | ~40 | Active |
+| `journal-1.md` | ~2014 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 59 | 2026-07-30 | 修复 Pi 终端兼容与本地历史恢复 | `68c2a0d1` | `master` |
 | 58 | 2026-07-29 | 修复 Pi 终端消息不可见 | `6cbfcb77` | `master` |
 | 57 | 2026-07-29 | 动态注入 R2 发布域名 | `f4f3e301` | `master` |
 | 56 | 2026-07-29 | 修复 Codex 换行与会话精确恢复 | `342d526d` | `master` |
