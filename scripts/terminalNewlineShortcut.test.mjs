@@ -59,9 +59,11 @@ test("only scans the current viewport", () => {
   assert.equal(hasCodexTuiViewport(terminal), false);
 });
 
-test("XTermTerminal includes immutable session CLI metadata in Codex detection", () => {
+test("shared CLI context includes immutable session metadata for XTermTerminal", () => {
   const componentSource = readFileSync(new URL("../src/components/XTermTerminal.tsx", import.meta.url), "utf8");
-  assert.match(componentSource, /sessionTool:\s*session\?\.cliTool/u);
-  assert.match(componentSource, /context\.sessionTool\s*===\s*"codex"/u);
+  const contextSource = readFileSync(new URL("../src/terminal/browser/TerminalCliContext.ts", import.meta.url), "utf8");
+  assert.match(componentSource, /createTerminalCliContext\(session, project\)/u);
+  assert.match(contextSource, /sessionTool:\s*session\?\.cliTool/u);
+  assert.match(contextSource, /sessionTool\s*===\s*"codex"/u);
   assert.match(componentSource, /isCodexSession\(getSessionToolContext\(\), terminal\)/u);
 });

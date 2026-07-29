@@ -42,6 +42,18 @@ test("composition anchoring restores the width from the frozen input cursor", ()
   assert.ok(boundsIndex > maxWidthIndex);
 });
 
+test("IME textarea and composition view can use separate anchors", () => {
+  const handler = source.match(
+    /const applyCompositionAnchorFix = \(\) => \{([\s\S]*?)\n  \};/,
+  )?.[1];
+
+  assert.ok(handler, "applyCompositionAnchorFix handler was not found");
+  assert.match(handler, /const textareaAnchor = resolveTextareaAnchor\?\.\(terminal, anchor\) \?\? anchor;/);
+  assert.match(handler, /compositionView\.style\.top = top;/);
+  assert.match(handler, /textarea\.style\.top = textareaTop;/);
+  assert.match(handler, /textarea\.style\.left = textareaLeft;/);
+});
+
 test("a new composition or disposal cancels stale deferred cleanup", () => {
   assert.match(
     source,

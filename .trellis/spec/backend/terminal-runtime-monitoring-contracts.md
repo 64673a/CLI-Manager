@@ -2,6 +2,60 @@
 
 > Executable contracts for terminal tab runtime status events that cross the Rust PTY boundary and the React/Zustand UI boundary.
 
+## Scenario: PTY terminal color capabilities
+
+### 1. Scope / Trigger
+
+- Trigger: changing PTY launch environment defaults or WSL environment forwarding.
+- Goal: child CLIs can select 24-bit color without changing shell/process behavior.
+
+### 2. Signatures
+
+```rust
+fn apply_terminal_capabilities(env_vars: &mut HashMap<String, String>, is_windows: bool);
+fn apply_wsl_env_forwarding(env_vars: &mut HashMap<String, String>);
+```
+
+### 3. Contracts
+
+- Every new PTY receives `COLORTERM=truecolor` unless the caller explicitly supplied `COLORTERM`.
+- Windows must not add or replace `TERM`; non-Windows adds `TERM=xterm-256color` only when absent.
+- WSL adds `COLORTERM` to `WSLENV` without duplicating an existing flagged entry such as
+  `COLORTERM/u`. Existing `WSLENV`, callback variables, and explicit terminal values are preserved.
+- Apply capability defaults before WSL forwarding. Do not alter shell selection, launch arguments,
+  SSH identity, terminal colors, or process lifecycle.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Windows, no terminal variables | Add only `COLORTERM=truecolor` |
+| Non-Windows, no terminal variables | Add `COLORTERM=truecolor` and `TERM=xterm-256color` |
+| Caller supplied either value | Preserve it exactly |
+| WSLENV already contains `COLORTERM` with flags | Do not append another entry |
+
+### 5. Good / Base / Bad Cases
+
+- Good: WSL receives `COLORTERM` through one `WSLENV` entry and Pi emits RGB SGR.
+- Base: an explicit `COLORTERM=24bit` and `TERM=screen-256color` remain unchanged.
+- Bad: set `TERM` on Windows or overwrite a user-provided terminal capability.
+
+### 6. Tests Required
+
+- Rust unit tests assert Windows/non-Windows defaults, explicit-value preservation, and WSLENV
+  de-duplication by variable name rather than the complete flagged entry.
+- Run `cargo test pty::manager::tests --lib`, `cargo fmt -- --check`, and `cargo check`.
+
+### 7. Wrong vs Correct
+
+```rust
+// Wrong: changes Windows TERM and overwrites explicit values.
+env_vars.insert("TERM".into(), "xterm-256color".into());
+
+// Correct: platform-aware defaults preserve caller ownership.
+PtyManager::apply_terminal_capabilities(&mut env_vars, cfg!(target_os = "windows"));
+```
+
 ---
 
 ## Scenario: CLI hook settings installation status

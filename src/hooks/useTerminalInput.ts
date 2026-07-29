@@ -42,7 +42,10 @@ import {
 import { resolveManualDirectCodexEnterData } from "../lib/codexManualInput";
 import { getTerminalCellWidth, resolveCursorIndexFromCellOffset } from "../lib/terminalCellWidth";
 import { trimTerminalPasteBoundaryLineBreaks } from "../lib/terminalKeyboard";
-import { attachTerminalIme } from "../lib/terminalIme";
+import {
+  attachTerminalIme,
+  type TerminalImeTextareaAnchorResolver,
+} from "../lib/terminalIme";
 import {
   clampTextCursorIndex,
   getTextCursorLength,
@@ -130,6 +133,7 @@ interface TerminalInputImeOptions {
   osPlatformRef: RefObject<OsPlatform>;
   scheduleFit: (force?: boolean) => void;
   onCompositionCommitted: (textareaValue: string) => void;
+  resolveTextareaAnchor?: TerminalImeTextareaAnchorResolver;
 }
 
 export interface TerminalInputSelectionController {
@@ -790,6 +794,7 @@ export function useTerminalInput({
       osPlatformRef,
       scheduleFit,
       onCompositionCommitted,
+      resolveTextareaAnchor,
     }: TerminalInputImeOptions,
   ) => {
     const container = containerRef.current;
@@ -807,6 +812,7 @@ export function useTerminalInput({
       updateSuggestionPosition: () => updateSuggestionGhostPositionRef.current(),
       scheduleFit,
       onCompositionCommitted,
+      resolveTextareaAnchor,
     });
   };
 

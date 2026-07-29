@@ -14,6 +14,16 @@ interface TerminalCellSize {
   height: number;
 }
 
+export interface TerminalImeAnchor {
+  x: number;
+  y: number;
+}
+
+export type TerminalImeTextareaAnchorResolver = (
+  terminal: Terminal,
+  anchor: TerminalImeAnchor,
+) => TerminalImeAnchor;
+
 export interface TerminalImeControllerOptions {
   terminal: Terminal;
   container: HTMLDivElement;
@@ -31,6 +41,7 @@ export interface TerminalImeControllerOptions {
   updateSuggestionPosition: () => void;
   scheduleFit: (force?: boolean) => void;
   onCompositionCommitted: (textareaValue: string) => void;
+  resolveTextareaAnchor?: TerminalImeTextareaAnchorResolver;
 }
 
 export const attachTerminalIme = ({
@@ -46,6 +57,7 @@ export const attachTerminalIme = ({
   updateSuggestionPosition,
   scheduleFit,
   onCompositionCommitted,
+  resolveTextareaAnchor,
 }: TerminalImeControllerOptions) => {
   const textarea = container.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement | null;
   const viewport = container.querySelector(".xterm-viewport") as HTMLElement | null;
@@ -195,9 +207,12 @@ export const attachTerminalIme = ({
     const compositionView = container.querySelector(".composition-view") as HTMLElement | null;
     if (!textarea && !compositionView) return;
     const anchor = compositionAnchorCell ?? resolveCompositionAnchorCell();
+    const textareaAnchor = resolveTextareaAnchor?.(terminal, anchor) ?? anchor;
     const cell = estimateCellSize();
     const left = String(Math.max(0, anchor.x * cell.width)) + "px";
     const top = String(Math.max(0, anchor.y * cell.height)) + "px";
+    const textareaLeft = String(Math.max(0, textareaAnchor.x * cell.width)) + "px";
+    const textareaTop = String(Math.max(0, textareaAnchor.y * cell.height)) + "px";
     const height = String(Math.max(1, cell.height)) + "px";
     const maxWidth = String(Math.max(1, terminal.cols - anchor.x) * cell.width) + "px";
     if (compositionView) {
@@ -212,8 +227,8 @@ export const attachTerminalIme = ({
       const width = compositionBounds && compositionBounds.width > 0
         ? compositionBounds.width
         : Math.max(1, cell.width);
-      textarea.style.left = left;
-      textarea.style.top = top;
+      textarea.style.left = textareaLeft;
+      textarea.style.top = textareaTop;
       textarea.style.width = String(width) + "px";
       textarea.style.height = height;
       textarea.style.lineHeight = height;

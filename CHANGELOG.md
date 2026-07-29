@@ -9,6 +9,7 @@
 ### 修复
 
 - **Pi Coding Agent 用户消息渲染**：修复 OSC 133 扫描器遗漏相邻集成序列之间普通文本的问题，Pi 提交后的用户消息、前景色与 ANSI 控制序列不再被前端归一化吞掉；Pi 识别与诊断职责保持独立，撤销无效的 `DEC 2026` 过滤和 viewport 刷新方案。（Refs #177）
+- **Pi Coding Agent 输入法、工具状态与历史恢复**：中文输入法的原生候选框改为锚定限定范围内最后一条 Pi composer 底边，组合文字仍保留在真实输入行；新 PTY 缺省声明 truecolor，Windows 不修改 `TERM`，WSL 自动转发 `COLORTERM`。普通工具调用背景在写入 xterm 前由可跨 frame 的 CSI 转换器精确清除，不再依赖私有缓冲区 API，并保留工具前景语义色、用户/自定义背景、真实 Diff 和其他 ANSI/OSC。Pi 本地历史会话支持 `pi --session <session-id>` 精确恢复，清理冲突参数并按 Worktree、来源/目录、当前筛选项目顺序选择配置；SSH Pi 恢复仍不支持。CLI 上下文、IME、ANSI、诊断和历史恢复已按职责拆分。（Refs #177）
 - **SSH Agent Hook 动态数量校验**：主程序不再硬编码 Claude/Codex Hook 条目数量，改为校验 Agent 上报数量的非零、安全上限及已管理条目关系；兼容新增提问 Hook 的 Agent 和旧版 Agent，无需仅因 Hook 数量变化重新部署远端 Agent。
 - **折叠侧边栏项目悬浮提示**：折叠侧边栏中的 Claude、Codex 等项目图标悬浮时统一显示项目名称，不再被厂商图标内置标题覆盖。（Refs #175）
 - **Codex 终端换行快捷键**：终端会同时依据会话固化的 CLI 类型和当前可见 Codex TUI 识别运行态；从项目直启 Codex，或在新建普通终端中手动启动 Codex 时，换行组合键均严格遵循设置，不再额外要求 Alt 或 Ctrl。

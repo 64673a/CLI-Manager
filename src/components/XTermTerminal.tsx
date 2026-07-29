@@ -67,8 +67,14 @@ import { Portal } from "./ui/Portal";
 import { useProjectStore } from "../stores/projectStore";
 import { formatStartupInputForPty, useTerminalStore } from "../stores/terminalStore";
 import {
-  createPiTerminalDiagnostics,
-  type PiTerminalDiagnostics,
+  createTerminalCliContext,
+  isClaudeOrCodexTerminalContext,
+  isClaudeTerminalContext,
+  isCodexTerminalContext,
+} from "../terminal/browser/TerminalCliContext";
+import {
+  createPiTerminalCompatibility,
+  type PiTerminalCompatibility,
 } from "../terminal/browser/TerminalPiCompatibility";
 import { shouldReflowTerminalCursorLine } from "../terminal/browser/TerminalReflowPolicy";
 import { terminalProcessManager } from "../terminal/core/TerminalProcessManager";
@@ -94,8 +100,6 @@ import { toast } from "sonner";
 import { logError, logInfo, logWarn } from "../lib/logger";
 import { registerTerminalSnapshotSource } from "../lib/sessionSnapshotPersistence";
 
-const CODEX_COMMAND_PATTERN = /(?:^|\s)codex(?:\.(?:cmd|exe|ps1))?(?:\s|$)/i;
-const CLAUDE_COMMAND_PATTERN = /(?:^|\s)claude(?:\.(?:cmd|exe|ps1))?(?:\s|$)/i;
 const CODEX_IME_DEBUG_WINDOW_MS = 250;
 const CODEX_IME_DUPLICATE_WINDOW_MS = 120;
 type TerminalSubsystemDisposable = IDisposable;
@@ -408,7 +412,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   const displayNormalizeOutputRef = useRef<(text: string) => string>((text) => text);
   const displayTransformOutputRef = useRef<(text: string) => string>((text) => text);
   const displayAfterWriteRef = useRef<((terminal: Terminal) => void) | null>(null);
-  const piTerminalDiagnosticsRef = useRef<PiTerminalDiagnostics | null>(null);
+  const piTerminalCompatibilityRef = useRef<PiTerminalCompatibility | null>(null);
   const cleanedAttachmentRootsRef = useRef<Set<string>>(new Set());
   const terminalScrollbackCustomEnabled = useSettingsStore((s) => s.terminalScrollbackCustomEnabled);
   const terminalScrollbackRows = useSettingsStore((s) => s.terminalScrollbackRows);
@@ -578,20 +582,15 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     const project = session?.projectId
       ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
       : null;
-    return {
-      projectTool: project?.cli_tool.trim().toLowerCase() ?? "",
-      startupCmd: session?.startupCmd ?? "",
-      titleTool: session?.title.match(/\(([^()]*)\)\s*$/)?.[1]?.trim().toLowerCase() ?? "",
-      outputHint: session?.initialTerminalOutput ?? "",
-    };
+    return createTerminalCliContext(session, project);
   };
-  if (piTerminalDiagnosticsRef.current?.sessionId !== sessionId) {
-    piTerminalDiagnosticsRef.current = createPiTerminalDiagnostics(
+  if (piTerminalCompatibilityRef.current?.sessionId !== sessionId) {
+    piTerminalCompatibilityRef.current = createPiTerminalCompatibility(
       sessionId,
       (message, payload) => logInfo(message, payload),
     );
   }
-  piTerminalDiagnosticsRef.current.updateContext(getSessionToolContext());
+  piTerminalCompatibilityRef.current.updateContext(getSessionToolContext());
 
   const {
     syncWebglRenderer,
@@ -621,7 +620,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     normalizeOutputRef: displayNormalizeOutputRef,
     transformOutputRef: displayTransformOutputRef,
     afterTerminalWriteRef: displayAfterWriteRef,
-    outputDiagnosticsRef: piTerminalDiagnosticsRef,
+    outputDiagnosticsRef: piTerminalCompatibilityRef,
     onPtyOutputListenError: (err) => logError("Failed to listen PTY output", { sessionId, err }),
   });
 
@@ -675,50 +674,17 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   });
   displayNormalizeOutputRef.current = normalizeTerminalOutput;
 
-  const getSessionToolContext = () => {
-    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
-    const project = session?.projectId
-      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
-      : null;
-    return {
-      projectTool: project?.cli_tool.trim().toLowerCase() ?? "",
-      sessionTool: session?.cliTool?.trim().toLowerCase() ?? "",
-      startupCmd: session?.startupCmd ?? "",
-      titleTool: session?.title.match(/\(([^()]*)\)\s*$/)?.[1]?.trim().toLowerCase() ?? "",
-    };
-  };
-
   const isCodexSession = (
     context = getSessionToolContext(),
     runtimeTerminal?: Terminal,
-  ) => {
-    return (
-      context.sessionTool === "codex"
-      || context.projectTool === "codex"
-      || context.titleTool === "codex"
-      || CODEX_COMMAND_PATTERN.test(context.startupCmd)
-      || (runtimeTerminal !== undefined && hasCodexTuiViewport(runtimeTerminal))
-    );
-  };
-
-  const isClaudeSession = (context = getSessionToolContext()) => {
-    return (
-      context.projectTool.includes("claude")
-      || context.titleTool.includes("claude")
-      || CLAUDE_COMMAND_PATTERN.test(context.startupCmd)
-    );
-  };
-
-  const isClaudeOrCodexSession = (context = getSessionToolContext()) => {
-    return (
-      context.projectTool === "codex"
-      || context.projectTool.includes("claude")
-      || context.titleTool === "codex"
-      || context.titleTool.includes("claude")
-      || CODEX_COMMAND_PATTERN.test(context.startupCmd)
-      || CLAUDE_COMMAND_PATTERN.test(context.startupCmd)
-    );
-  };
+  ) => (
+    isCodexTerminalContext(context)
+    || (runtimeTerminal !== undefined && hasCodexTuiViewport(runtimeTerminal))
+  );
+  const isClaudeSession = (context = getSessionToolContext()) => isClaudeTerminalContext(context);
+  const isClaudeOrCodexSession = (context = getSessionToolContext()) => (
+    isClaudeOrCodexTerminalContext(context)
+  );
   const normalizeTuiComposerBackground = (terminal: Terminal) => {
     const context = getSessionToolContext();
     normalizeTerminalTuiComposerBackground(terminal, {
@@ -762,7 +728,9 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
 
     return processed + text.slice(lastIndex);
   };
-  displayTransformOutputRef.current = processCursorVisibility;
+  displayTransformOutputRef.current = (text) => processCursorVisibility(
+    piTerminalCompatibilityRef.current?.transformOutput(text) ?? text,
+  );
 
   const clearVisibilityRestoreRevealSchedule = () => {
     if (visibilityRestoreRevealTimerRef.current !== null) {
@@ -1271,7 +1239,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       });
     };
     if (initialTerminalOutput) {
-      terminal.write(initialTerminalOutput, () => {
+      terminal.write(displayTransformOutputRef.current(initialTerminalOutput), () => {
         if (terminalRef.current !== terminal) return;
         terminal.scrollToBottom();
         refreshTerminalViewport(terminal);
@@ -1590,6 +1558,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       forwarding: inputForwarding,
       osPlatformRef,
       scheduleFit,
+      resolveTextareaAnchor: piTerminalCompatibilityRef.current?.resolveImeTextareaAnchor,
       onCompositionCommitted: (textareaValue) => {
         if (!isCodexSession()) return;
         codexImeDebugRef.current.compositionEndAt = Date.now();

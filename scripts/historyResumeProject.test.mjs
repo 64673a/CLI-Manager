@@ -17,19 +17,43 @@ const historyWorkspaceSource = readFileSync(
   new URL("../src/components/HistoryWorkspace.tsx", import.meta.url),
   "utf8"
 );
+writeFileSync(
+  join(tempDir, "cliTools.mjs"),
+  `export const resolveCliToolHistorySourceId = (tool) => {
+    const value = tool?.trim().toLowerCase();
+    return ["claude", "codex", "grok", "pi"].includes(value) ? value : null;
+  };\n`,
+  "utf8",
+);
+writeFileSync(
+  join(tempDir, "providerSwitching.mjs"),
+  "export const getProviderSwitchAppType = (project) => project.providerSource ?? null;\n",
+  "utf8",
+);
 const output = ts.transpileModule(source, {
   compilerOptions: {
     module: ts.ModuleKind.ES2022,
     target: ts.ScriptTarget.ES2022,
   },
-}).outputText;
+}).outputText
+  .replace('from "./cliTools"', 'from "./cliTools.mjs"')
+  .replace('from "./providerSwitching"', 'from "./providerSwitching.mjs"');
 const outputPath = join(tempDir, "historyResumeProject.mjs");
 writeFileSync(outputPath, output, "utf8");
 
-const { findLocalHistoryCwdProjects } = await import(pathToFileURL(outputPath).href);
+const {
+  findLocalHistoryCwdProjects,
+  selectLocalHistoryResumeProject,
+} = await import(pathToFileURL(outputPath).href);
 
 function project(id, path, environmentType = "local") {
-  return { id, path, environment_type: environmentType };
+  return {
+    id,
+    name: id,
+    path,
+    environment_type: environmentType,
+    cli_tool: id.includes("pi") ? "pi" : id.includes("codex") ? "codex" : "claude",
+  };
 }
 
 test("matches a unique local project by exact history cwd", () => {
@@ -80,6 +104,37 @@ test("includes WSL projects, excludes SSH projects and sessions without cwd", ()
     ["wsl"]
   );
   assert.deepEqual(findLocalHistoryCwdProjects({ cwd: null }, projects), []);
+});
+
+test("current project wins only when it belongs to the matched candidate set", () => {
+  const projects = [
+    project("pi-a", "F:/repo"),
+    project("pi-b", "F:/repo"),
+    project("codex", "F:/repo"),
+  ];
+  const session = { cwd: "F:/repo", project_key: "repo", source: "pi" };
+
+  assert.equal(
+    selectLocalHistoryResumeProject(session, projects, null, "pi-b").project?.id,
+    "pi-b",
+  );
+  const wrongSource = selectLocalHistoryResumeProject(session, projects, null, "codex");
+  assert.equal(wrongSource.project, null);
+  assert.deepEqual(wrongSource.candidates.map((item) => item.id), ["pi-a", "pi-b"]);
+});
+
+test("exact worktree project has priority over duplicate cwd candidates", () => {
+  const projects = [project("pi-a", "F:/repo"), project("pi-b", "F:/repo")];
+  const worktree = { id: "wt", project_id: "pi-b", path: "F:/repo/wt" };
+  const selection = selectLocalHistoryResumeProject(
+    { cwd: "F:/repo/wt", project_key: "repo", source: "pi" },
+    projects,
+    worktree,
+    "pi-a",
+  );
+
+  assert.equal(selection.project?.id, "pi-b");
+  assert.equal(selection.worktree?.id, "wt");
 });
 
 test("local history resume binds the terminal tab to the selected CLI session", () => {

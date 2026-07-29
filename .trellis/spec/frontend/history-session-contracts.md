@@ -396,6 +396,68 @@ await get().loadSessions();
 await get().loadSessions({ background: true });
 ```
 
+## Scenario: Local Pi History Resume
+
+### 1. Scope / Trigger
+
+- Trigger: changing local history resume commands, CLI source matching, or project selection.
+- Goal: reopen the exact Pi transcript without binding an unrelated project or creating a new session.
+
+### 2. Signatures
+
+```typescript
+buildHistoryResumeCommand(session, project?): string | null;
+stripPiResumeCliArgs(cliArgs): string;
+selectLocalHistoryResumeProject(session, projects, worktree, projectIdFilter): LocalHistoryResumeSelection;
+```
+
+### 3. Contracts
+
+- Local Pi resume uses `pi --session <session-id>`; `--session-id` is forbidden because it may
+  create a new session instead of reopening the selected transcript.
+- Pi project arguments are cleaned by a dedicated helper. Remove `-c`, `-r`, `--continue`,
+  `--resume`, `--session`, `--session-id`, `--fork`, their inline/separate targets, and preserve
+  ordinary arguments such as `--session-dir` and model selection.
+- Do not change shared Claude/Codex/Grok `stripResumeCliArgs` or `appendResumeCliArgs` semantics.
+- Source matching first uses `resolveCliToolHistorySourceId`; provider switching is only the fallback
+  when the registry cannot resolve a source.
+- Local selection order is exact Worktree project, source plus cwd/project-key candidates, current
+  `projectIdFilter` when it belongs to those candidates, unique candidate, then explicit dialog.
+  A current project with the wrong source must never be bound automatically.
+- Pi advertises local resume as supported. SSH Pi resume remains unsupported until the remote
+  identity/preflight protocol explicitly adds Pi.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Invalid/whitespace session ID | Return `null`; do not launch |
+| Pi project contains old resume selectors | Remove selectors and targets before appending ordinary args |
+| Current project is not in the matched candidate set | Do not auto-bind it |
+| Several same-source cwd candidates remain | Open the explicit project dialog |
+
+### 5. Good / Base / Bad Cases
+
+- Good: an exact Worktree project wins even when the main cwd has duplicate Pi projects.
+- Base: one Pi project matches cwd and resumes directly with its normal model/session-dir args.
+- Bad: build `pi --session-id ...`, or use the currently filtered Codex project for a Pi session.
+
+### 6. Tests Required
+
+- Run `node --test scripts/resumeCliArgs.test.mjs scripts/historyResumeProject.test.mjs`.
+- Cover exact `pi --session`, every conflicting argument, preserved normal arguments, duplicate cwd
+  selection, wrong-source rejection, Worktree priority, and Claude/Codex/Grok regressions.
+
+### 7. Wrong vs Correct
+
+```typescript
+// Wrong: --session-id can select/create the wrong Pi session.
+const command = `pi --session-id ${sessionId}`;
+
+// Correct: the dedicated builder strips stale selectors and uses exact resume.
+const command = buildHistoryResumeCommand(session, project);
+```
+
 ## Scenario: History File Change Records
 
 ### 1. Scope / Trigger
