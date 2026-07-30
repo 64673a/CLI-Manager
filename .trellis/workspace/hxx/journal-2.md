@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 60: 修复 Pi 输入法编辑器锚点
+
+**Date**: 2026-07-30
+**Task**: 修复 Pi 输入法编辑器锚点
+**Branch**: `master`
+
+### Summary
+
+Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字锚定输入行、候选框锚定下边框，并补齐全屏、缩放、滚动和非 Pi 回归。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6eed21e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
