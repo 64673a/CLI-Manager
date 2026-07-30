@@ -2757,6 +2757,24 @@
   scrollbar-gutter: stable;
 }
 
+.ui-terminal-bg-layer .xterm .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical
+  > .xterm-slider {
+  left: calc(50% - 2px) !important;
+  width: 4px !important;
+  border-radius: 999px;
+}
+
+.ui-terminal-bg-layer .xterm .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical:hover
+  > .xterm-slider,
+.ui-terminal-bg-layer .xterm .xterm-scrollable-element
+  > .xterm-scrollbar.xterm-vertical
+  > .xterm-slider.xterm-active {
+  left: 0 !important;
+  width: 100% !important;
+}
+
 .diff-code-inner {
   width: max-content;
   min-width: 100%;
