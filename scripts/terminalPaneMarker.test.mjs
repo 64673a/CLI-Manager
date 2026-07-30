@@ -25,6 +25,7 @@ const {
 
 const resolve = (overrides = {}) => resolveTerminalPaneMarker({
   isLayoutVisible: true,
+  isSplitLayout: true,
   isAppFocused: true,
   isPaneFocused: true,
   isMainSession: true,
@@ -54,6 +55,11 @@ test("Pane marker overlay is anchored inside terminal content instead of the Tab
     /className="ui-terminal-pane-content[\s\S]*?<PaneContentDropZones[\s\S]*?className="ui-terminal-pane-marker"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\);/,
   );
   assert.doesNotMatch(terminalTabs, /ui-terminal-pane-marker__tab-bottom/);
+});
+
+test("single-Pane layouts render no marker even with multiple Tabs or Hook status", () => {
+  assert.equal(resolve({ isSplitLayout: false }), null);
+  assert.equal(resolve({ isSplitLayout: false, hookStatus: "done" }), null);
 });
 
 test("invalid style and colors fall back independently", () => {

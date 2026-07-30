@@ -1127,6 +1127,7 @@ const option = {
 **Contracts**:
 
 - Resolve Hook state from the active Tab's Hook source only. Shell lifecycle status must not create Pane status colors.
+- Render markers only when the current visible layout contains more than one Pane. A single Pane with multiple Tabs renders no focus or Hook marker; a fullscreen Pane from an underlying split layout remains eligible.
 - Focused markers use 2 px at full opacity. Background done, failed, or attention markers use 1 px at 50% opacity; background running renders nothing.
 - Hidden Workspans and fullscreen-excluded or filtered-out Pane layouts render no marker. Existing Workspan summary dots remain authoritative for hidden layouts.
 - Window blur, document hiding, minimize, and tray transitions remove focus emphasis but preserve background Hook markers.
@@ -1148,6 +1149,7 @@ interface TerminalPaneMarkerSettings {
 **Validation matrix**:
 
 - Missing settings object -> use the complete default object and enable marker behavior.
+- Visible Pane count <= 1 -> render no marker, regardless of Tab count or Hook status.
 - Default focus color -> `#51A0CC`; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
 - Invalid style -> fall back only `style` to `tab-frame`.
 - Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.

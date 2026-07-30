@@ -1820,6 +1820,7 @@ function PaneLeafView({
     : null;
   const paneMarker = resolveTerminalPaneMarker({
     isLayoutVisible: isLayoutVisible && !historyActive,
+    isSplitLayout: allPanes.length > 1,
     isAppFocused,
     isPaneFocused: effectivePaneActiveSessionId !== null && effectivePaneActiveSessionId === activeSessionId,
     isMainSession: (activePaneSession?.kind ?? "pty") === "pty",

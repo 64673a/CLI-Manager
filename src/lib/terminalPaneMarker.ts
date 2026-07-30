@@ -50,6 +50,7 @@ export function sanitizeTerminalPaneMarkerSettings(value: unknown): TerminalPane
 
 export function resolveTerminalPaneMarker(input: {
   isLayoutVisible: boolean;
+  isSplitLayout: boolean;
   isAppFocused: boolean;
   isPaneFocused: boolean;
   isMainSession: boolean;
@@ -57,7 +58,7 @@ export function resolveTerminalPaneMarker(input: {
   settings: TerminalPaneMarkerSettings;
   accentColor?: string;
 }): TerminalPaneMarkerPresentation | null {
-  if (!input.isLayoutVisible) return null;
+  if (!input.isLayoutVisible || !input.isSplitLayout) return null;
 
   const status = input.isMainSession
     && (input.hookStatus === "done" || input.hookStatus === "failed" || input.hookStatus === "attention")
