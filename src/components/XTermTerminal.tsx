@@ -1560,6 +1560,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       scheduleFit,
       resolveCompositionAnchor: piTerminalCompatibilityRef.current?.resolveImeCompositionAnchor,
       resolveTextareaAnchor: piTerminalCompatibilityRef.current?.resolveImeTextareaAnchor,
+      shouldRefreshCompositionAnchor: piTerminalCompatibilityRef.current?.shouldRefreshImeCompositionAnchor,
       onCompositionCommitted: (textareaValue) => {
         if (!isCodexSession()) return;
         codexImeDebugRef.current.compositionEndAt = Date.now();

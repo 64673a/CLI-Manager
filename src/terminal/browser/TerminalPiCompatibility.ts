@@ -21,6 +21,7 @@ export interface PiTerminalCompatibility {
   updateContext(context: TerminalCliContext): void;
   resolveImeCompositionAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
   resolveImeTextareaAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
+  shouldRefreshImeCompositionAnchor(): boolean;
   transformOutput(text: string): string;
   onFrame(frame: TerminalBinaryFrame, rawText: string, normalizedText: string): void;
   onWriteCommitted(terminal: Terminal, writtenText: string): void;
@@ -56,6 +57,9 @@ export function createPiTerminalCompatibility(
     },
     resolveImeTextareaAnchor(terminal, anchor) {
       return piActive ? resolvePiImeTextareaAnchor(terminal, anchor) : anchor;
+    },
+    shouldRefreshImeCompositionAnchor() {
+      return piActive;
     },
     transformOutput(text) {
       return piActive ? ansiTransform.transform(text) : text;

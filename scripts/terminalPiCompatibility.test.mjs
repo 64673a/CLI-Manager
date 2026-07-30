@@ -142,11 +142,20 @@ test("Pi IME resolves the editor input row before its textarea bottom border", (
   assert.deepEqual(resolvePiImeTextareaAnchor(terminal, compositionAnchor), { x: 7, y: 4 });
 });
 
-test("Pi IME keeps the live cursor when it is inside the editor", () => {
+test("Pi IME prefers the visible inverse cursor over a stale hardware cursor inside the editor", () => {
+  const terminal = terminalWithLines(
+    ["output", "────────", "  input", "", "────────", "status"],
+    { x: 79, y: 2 },
+    [{ x: 4, y: 2 }],
+  );
+
+  assert.deepEqual(resolvePiImeCompositionAnchor(terminal, { x: 0, y: 0 }), { x: 4, y: 2 });
+});
+
+test("Pi IME keeps the live cursor inside the editor when no software cursor is visible", () => {
   const terminal = terminalWithLines(
     ["output", "────────", "  input", "", "────────", "status"],
     { x: 4, y: 3 },
-    [{ x: 7, y: 2 }],
   );
 
   assert.deepEqual(resolvePiImeCompositionAnchor(terminal, { x: 0, y: 0 }), { x: 4, y: 3 });
@@ -253,9 +262,11 @@ test("ANSI transform survives every CSI frame split and reset drops fragments", 
 test("Pi facade transforms active sessions and leaves non-Pi sessions byte-for-byte", () => {
   const pi = createPiTerminalCompatibility("pi", () => {}, false);
   pi.updateContext(PI_CONTEXT);
+  assert.equal(pi.shouldRefreshImeCompositionAnchor(), true);
   assert.equal(pi.transformOutput("\x1b[48;2;40;50;40mtool"), "\x1b[49mtool");
 
   const shell = createPiTerminalCompatibility("shell", () => {}, false);
+  assert.equal(shell.shouldRefreshImeCompositionAnchor(), false);
   const input = "\x1b[48;2;40;50;40mcustom";
   assert.equal(shell.transformOutput(input), input);
 });

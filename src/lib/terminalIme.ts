@@ -44,6 +44,7 @@ export interface TerminalImeControllerOptions {
   onCompositionCommitted: (textareaValue: string) => void;
   resolveCompositionAnchor?: TerminalImeAnchorResolver;
   resolveTextareaAnchor?: TerminalImeTextareaAnchorResolver;
+  shouldRefreshCompositionAnchor?: () => boolean;
 }
 
 export const attachTerminalIme = ({
@@ -61,6 +62,7 @@ export const attachTerminalIme = ({
   onCompositionCommitted,
   resolveCompositionAnchor,
   resolveTextareaAnchor,
+  shouldRefreshCompositionAnchor,
 }: TerminalImeControllerOptions) => {
   const textarea = container.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement | null;
   const viewport = container.querySelector(".xterm-viewport") as HTMLElement | null;
@@ -131,6 +133,12 @@ export const attachTerminalIme = ({
   const resolveCompositionAnchorCell = () => {
     const fallbackAnchor = resolveTerminalImeCompositionAnchor(terminal);
     return resolveCompositionAnchor?.(terminal, fallbackAnchor) ?? fallbackAnchor;
+  };
+
+  const refreshCompositionAnchorIfNeeded = () => {
+    if (shouldRefreshCompositionAnchor?.()) {
+      compositionAnchorCell = resolveCompositionAnchorCell();
+    }
   };
 
   const applyCompositionAnchorFix = () => {
@@ -251,6 +259,7 @@ export const attachTerminalIme = ({
   };
   const onImeProcessKeyDown = (event: KeyboardEvent) => {
     if (!isHelperTextareaEvent(event) || event.keyCode !== IME_PROCESS_KEY_CODE || event.ctrlKey || event.altKey || event.metaKey) return;
+    pinHelperTextareaAnchor();
     lastImeProcessKeyAt = nowForImeInput();
   };
   const onCompositionStart = () => {
@@ -268,6 +277,7 @@ export const attachTerminalIme = ({
     scheduleCompositionAnchorFix();
   };
   const onCompositionUpdate = () => {
+    refreshCompositionAnchorIfNeeded();
     scheduleCompositionScrollRestore();
     scheduleCompositionAnchorFix();
   };
@@ -298,6 +308,7 @@ export const attachTerminalIme = ({
     if (!isActiveRef.current) return;
     if (isComposingRef.current) {
       clearSuggestion();
+      refreshCompositionAnchorIfNeeded();
       scheduleCompositionScrollRestore();
       scheduleCompositionAnchorFix();
       return;
@@ -313,6 +324,7 @@ export const attachTerminalIme = ({
       return;
     }
     clearSuggestion();
+    refreshCompositionAnchorIfNeeded();
     scheduleCompositionScrollRestore();
     scheduleCompositionAnchorFix();
   });

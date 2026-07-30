@@ -65,9 +65,9 @@ export function resolvePiImeCompositionAnchor(
   const regions = findPiEditorRegions(terminal);
   for (let index = regions.length - 1; index >= 0; index -= 1) {
     const region = regions[index];
-    if (containsRow(region, cursor.y)) return cursor;
     const inverseAnchor = findInverseAnchor(terminal, region);
     if (inverseAnchor) return inverseAnchor;
+    if (containsRow(region, cursor.y)) return cursor;
   }
   return fallbackAnchor;
 }

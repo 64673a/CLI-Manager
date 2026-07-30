@@ -136,6 +136,7 @@ interface TerminalInputImeOptions {
   onCompositionCommitted: (textareaValue: string) => void;
   resolveCompositionAnchor?: TerminalImeAnchorResolver;
   resolveTextareaAnchor?: TerminalImeTextareaAnchorResolver;
+  shouldRefreshCompositionAnchor?: () => boolean;
 }
 
 export interface TerminalInputSelectionController {
@@ -798,6 +799,7 @@ export function useTerminalInput({
       onCompositionCommitted,
       resolveCompositionAnchor,
       resolveTextareaAnchor,
+      shouldRefreshCompositionAnchor,
     }: TerminalInputImeOptions,
   ) => {
     const container = containerRef.current;
@@ -817,6 +819,7 @@ export function useTerminalInput({
       onCompositionCommitted,
       resolveCompositionAnchor,
       resolveTextareaAnchor,
+      shouldRefreshCompositionAnchor,
     });
   };
 

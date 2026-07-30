@@ -6,11 +6,14 @@
 
 - **R2 发布域名动态注入**：GitHub Actions 的 `R2_PUBLIC_BASE_URL` 现在是桌面更新器、SSH Agent 清单、安装命令及发布脚本的唯一构建配置源；发布前统一校验 HTTPS Origin，并继续保留 GitHub Release 备用源与静态更新签名公钥，后续更换 R2 自定义域名无需全仓库替换。
 
+### 已知问题
+
+- **Pi Coding Agent 连续输入法漂移（未解决）**：Windows Pi 首次 composition 正常，但候选上屏后的第二次输入仍可能把拼音画到终端最右侧且只显示一个字符。本轮已加入 Process key 同步重钉、Pi 编辑区域软件光标优先、composition 期间 Pi render/cursor 动态刷新及相应合成回归；自动测试通过，但人工验收仍失败，当前实现仅作为后续诊断基础，不视为修复完成。（Refs #177）
+
 ### 修复
 
 - **Pi Coding Agent 用户消息渲染**：修复 OSC 133 扫描器遗漏相邻集成序列之间普通文本的问题，Pi 提交后的用户消息、前景色与 ANSI 控制序列不再被前端归一化吞掉；Pi 识别与诊断职责保持独立，撤销无效的 `DEC 2026` 过滤和 viewport 刷新方案。（Refs #177）
 - **Pi Coding Agent 输入法、工具状态与历史恢复**：中文输入法的原生候选框改为锚定限定范围内最后一条 Pi composer 底边，组合文字仍保留在真实输入行；新 PTY 缺省声明 truecolor，Windows 不修改 `TERM`，WSL 自动转发 `COLORTERM`。普通工具调用背景在写入 xterm 前由可跨 frame 的 CSI 转换器精确清除，不再依赖私有缓冲区 API，并保留工具前景语义色、用户/自定义背景、真实 Diff 和其他 ANSI/OSC。Pi 本地历史会话支持 `pi --session <session-id>` 精确恢复，清理冲突参数并按 Worktree、来源/目录、当前筛选项目顺序选择配置；SSH Pi 恢复仍不支持。CLI 上下文、IME、ANSI、诊断和历史恢复已按职责拆分。（Refs #177）
-- **Pi Coding Agent 输入法窗口适配**：修复 Pi 编辑器没有通用提示符时，全屏组合文字落在编辑框上方，以及缩放后 xterm 将 helper textarea 同步到右下状态光标的问题。Pi 现在从可见 viewport 的成对横线（含滚动提示横线）独立识别编辑器：硬件光标在编辑器内时优先使用，否则只接受编辑器区域内的反色软件光标；组合文字锚定输入行，候选框锚定下边框。非 composition 状态下 resize 会重新钉住 textarea，composition 期间则按新 buffer 几何重算。（Refs #177）
 - **SSH Agent Hook 动态数量校验**：主程序不再硬编码 Claude/Codex Hook 条目数量，改为校验 Agent 上报数量的非零、安全上限及已管理条目关系；兼容新增提问 Hook 的 Agent 和旧版 Agent，无需仅因 Hook 数量变化重新部署远端 Agent。
 - **折叠侧边栏项目悬浮提示**：折叠侧边栏中的 Claude、Codex 等项目图标悬浮时统一显示项目名称，不再被厂商图标内置标题覆盖。（Refs #175）
 - **Codex 终端换行快捷键**：终端会同时依据会话固化的 CLI 类型和当前可见 Codex TUI 识别运行态；从项目直启 Codex，或在新建普通终端中手动启动 Codex 时，换行组合键均严格遵循设置，不再额外要求 Alt 或 Ctrl。
