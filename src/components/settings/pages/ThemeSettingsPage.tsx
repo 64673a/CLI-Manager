@@ -220,12 +220,12 @@ function PaneMarkerStylePreview({
         <Box
           className="absolute left-0 top-6 w-0.5"
           bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
-          style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }}
+          style={{ height: full ? "calc(100% - 1.5rem)" : "2%" }}
         />
         <Box
           className="absolute right-0 top-6 w-0.5"
           bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
-          style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }}
+          style={{ height: full ? "calc(100% - 1.5rem)" : "2%" }}
         />
         {full && (
           <Box
@@ -1121,48 +1121,72 @@ export function ThemeSettingsPage() {
           onToggle={() => toggleSection("paneMarker")}
         >
           <Stack gap="md">
-            <SimpleGrid
-              cols={{ base: 1, sm: 2 }}
-              role="group"
-              aria-label={t("settings.terminal.paneMarker.styleAria")}
-            >
-              {([
-                ["full", "settings.terminal.paneMarker.style.full"],
-                ["tab-top", "settings.terminal.paneMarker.style.tabTop"],
-              ] as const).map(([style, labelKey]) => (
-                <PaneMarkerStylePreview
-                  key={style}
-                  style={style}
-                  label={t(labelKey)}
-                  selected={terminalPaneMarker.style === style}
-                  onSelect={() => updatePaneMarker("style", style)}
-                />
-              ))}
-            </SimpleGrid>
+            <Group justify="space-between" align="center" gap="md" wrap="nowrap">
+              <Text size="xs" c="var(--on-surface-variant)">
+                {t("settings.terminal.paneMarker.enabled")}
+              </Text>
+              <Switch
+                color="cliPrimary"
+                checked={terminalPaneMarker.enabled}
+                onChange={(event) => updatePaneMarker("enabled", event.currentTarget.checked)}
+                aria-label={t(
+                  terminalPaneMarker.enabled
+                    ? "settings.terminal.paneMarker.disableAria"
+                    : "settings.terminal.paneMarker.enableAria"
+                )}
+              />
+            </Group>
 
-            <SimpleGrid cols={{ base: 1, sm: 3 }}>
-              {([
-                ["doneColor", "settings.terminal.paneMarker.color.done"],
-                ["failedColor", "settings.terminal.paneMarker.color.failed"],
-                ["attentionColor", "settings.terminal.paneMarker.color.attention"],
-              ] as const).map(([key, labelKey]) => (
-                <Stack key={key} gap={6}>
-                  <Text size="xs" c="var(--on-surface-variant)">{t(labelKey)}</Text>
-                  <Group gap="xs" wrap="nowrap">
-                    <TextInput
-                      type="color"
-                      value={terminalPaneMarker[key]}
-                      onChange={(event) => updatePaneMarker(key, event.currentTarget.value.toUpperCase())}
-                      w={52}
-                      size="xs"
-                      aria-label={t(`${labelKey}Aria`)}
-                      styles={{ input: { cursor: "pointer", padding: 4 } }}
+            <fieldset
+              disabled={!terminalPaneMarker.enabled}
+              aria-disabled={!terminalPaneMarker.enabled}
+              className="m-0 min-w-0 border-0 p-0"
+            >
+              <Stack gap="md" style={!terminalPaneMarker.enabled ? { opacity: 0.55 } : undefined}>
+                <SimpleGrid
+                  cols={{ base: 1, sm: 2 }}
+                  role="group"
+                  aria-label={t("settings.terminal.paneMarker.styleAria")}
+                >
+                  {([
+                    ["full", "settings.terminal.paneMarker.style.full"],
+                    ["tab-top", "settings.terminal.paneMarker.style.tabTop"],
+                  ] as const).map(([style, labelKey]) => (
+                    <PaneMarkerStylePreview
+                      key={style}
+                      style={style}
+                      label={t(labelKey)}
+                      selected={terminalPaneMarker.style === style}
+                      onSelect={() => updatePaneMarker("style", style)}
                     />
-                    <Text size="xs" ff="monospace">{terminalPaneMarker[key]}</Text>
-                  </Group>
-                </Stack>
-              ))}
-            </SimpleGrid>
+                  ))}
+                </SimpleGrid>
+
+                <SimpleGrid cols={{ base: 1, sm: 3 }}>
+                  {([
+                    ["doneColor", "settings.terminal.paneMarker.color.done"],
+                    ["failedColor", "settings.terminal.paneMarker.color.failed"],
+                    ["attentionColor", "settings.terminal.paneMarker.color.attention"],
+                  ] as const).map(([key, labelKey]) => (
+                    <Stack key={key} gap={6}>
+                      <Text size="xs" c="var(--on-surface-variant)">{t(labelKey)}</Text>
+                      <Group gap="xs" wrap="nowrap">
+                        <TextInput
+                          type="color"
+                          value={terminalPaneMarker[key]}
+                          onChange={(event) => updatePaneMarker(key, event.currentTarget.value.toUpperCase())}
+                          w={52}
+                          size="xs"
+                          aria-label={t(`${labelKey}Aria`)}
+                          styles={{ input: { cursor: "pointer", padding: 4 } }}
+                        />
+                        <Text size="xs" ff="monospace">{terminalPaneMarker[key]}</Text>
+                      </Group>
+                    </Stack>
+                  ))}
+                </SimpleGrid>
+              </Stack>
+            </fieldset>
           </Stack>
         </CollapsibleSettingsSection>
 

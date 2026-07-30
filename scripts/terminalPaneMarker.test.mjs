@@ -23,6 +23,13 @@ const {
   sanitizeTerminalPaneMarkerSettings,
 } = await import(pathToFileURL(modulePath).href);
 
+const enabledSettings = {
+  ...DEFAULT_TERMINAL_PANE_MARKER_SETTINGS,
+  enabled: true,
+};
+const defaultFocusColor =
+  "color-mix(in srgb, var(--terminal-theme-muted, #64748b) 60%, var(--terminal-theme-background, #0c0e10) 40%)";
+
 const resolve = (overrides = {}) => resolveTerminalPaneMarker({
   isLayoutVisible: true,
   isSplitLayout: true,
@@ -30,17 +37,24 @@ const resolve = (overrides = {}) => resolveTerminalPaneMarker({
   isPaneFocused: true,
   isMainSession: true,
   hookStatus: "none",
-  settings: DEFAULT_TERMINAL_PANE_MARKER_SETTINGS,
+  settings: enabledSettings,
   ...overrides,
 });
 
-test("missing settings migrate to enabled defaults", () => {
+test("missing settings migrate to disabled defaults", () => {
   assert.deepEqual(sanitizeTerminalPaneMarkerSettings(undefined), {
+    enabled: false,
     style: "tab-top",
     doneColor: "#8FBF7F",
     failedColor: "#F7768E",
     attentionColor: "#FF9E64",
   });
+});
+
+test("explicit enabled state is preserved and invalid values fall back to disabled", () => {
+  assert.equal(sanitizeTerminalPaneMarkerSettings({ enabled: true }).enabled, true);
+  assert.equal(sanitizeTerminalPaneMarkerSettings({ enabled: "true" }).enabled, false);
+  assert.equal(sanitizeTerminalPaneMarkerSettings({ style: "full" }).enabled, false);
 });
 
 test("Pane marker settings participate in preference sync", () => {
@@ -57,6 +71,17 @@ test("Pane marker overlay is anchored inside terminal content instead of the Tab
   assert.doesNotMatch(terminalTabs, /ui-terminal-pane-marker__tab-bottom/);
 });
 
+test("default focus color follows the terminal theme and tab-top corners use 2 percent", () => {
+  const styles = readFileSync(new URL("../src/styles/components.css", import.meta.url), "utf8");
+  const settingsPage = readFileSync(
+    new URL("../src/components/settings/pages/ThemeSettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR, defaultFocusColor);
+  assert.match(styles, /\.ui-terminal-pane-marker__right,[\s\S]*?height:\s*2%;/);
+  assert.equal(settingsPage.match(/full \? "calc\(100% - 1\.5rem\)" : "2%"/g)?.length, 2);
+});
+
 test("removed tab-frame settings migrate to tab-top", () => {
   assert.equal(sanitizeTerminalPaneMarkerSettings({ style: "tab-frame" }).style, "tab-top");
 });
@@ -71,6 +96,17 @@ test("settings use the Terminal Status Marker name and expose no tab-frame optio
   assert.doesNotMatch(i18n, /paneMarker\.style\.tabFrame/);
   assert.match(i18n, /"settings\.terminal\.paneMarker\.title": "终端状态标记"/);
   assert.match(i18n, /"settings\.terminal\.paneMarker\.title": "Terminal Status Markers"/);
+  assert.match(settingsPage, /checked=\{terminalPaneMarker\.enabled\}/);
+  assert.match(settingsPage, /<fieldset[\s\S]*?disabled=\{!terminalPaneMarker\.enabled\}/);
+  assert.match(i18n, /"settings\.terminal\.paneMarker\.enabled": "启用终端状态标记"/);
+  assert.match(i18n, /"settings\.terminal\.paneMarker\.enabled": "Enable terminal status markers"/);
+});
+
+test("disabled Pane marker settings suppress focus and Hook markers", () => {
+  const settings = DEFAULT_TERMINAL_PANE_MARKER_SETTINGS;
+  assert.equal(resolve({ settings }), null);
+  assert.equal(resolve({ settings, hookStatus: "done" }), null);
+  assert.equal(resolve({ settings, hookStatus: "attention", isAppFocused: false }), null);
 });
 
 test("single-Pane layouts render no marker even with multiple Tabs or Hook status", () => {
@@ -85,6 +121,7 @@ test("invalid style and colors fall back independently", () => {
     failedColor: "red",
     attentionColor: "#abcdef",
   }), {
+    enabled: false,
     style: "tab-top",
     doneColor: "#112233",
     failedColor: "#F7768E",
@@ -93,10 +130,10 @@ test("invalid style and colors fall back independently", () => {
 });
 
 test("focused Pane uses the default focus color at 2px and full opacity", () => {
-  assert.equal(DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR, "#51A0CC");
+  assert.equal(DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR, defaultFocusColor);
   assert.deepEqual(resolve(), {
     status: "focus",
-    color: "#51A0CC",
+    color: defaultFocusColor,
     width: 2,
     opacity: 1,
   });

@@ -1122,7 +1122,7 @@ const option = {
 
 ### Convention: Visible terminal panes use non-layout marker overlays
 
-**What**: The active visible Pane uses the dedicated default focus color `#51A0CC`, while the active main-session Tab may override it with persisted Hook done, failed, or attention colors. Render marker lines as an absolute, pointer-transparent overlay; never use layout borders, shadows, animation, or xterm remounting.
+**What**: The active visible Pane uses a focus color mixed from the current terminal muted and background colors, while the active main-session Tab may override it with persisted Hook done, failed, or attention colors. Render marker lines as an absolute, pointer-transparent overlay; never use layout borders, shadows, animation, or xterm remounting.
 
 **Contracts**:
 
@@ -1133,12 +1133,14 @@ const option = {
 - Window blur, document hiding, minimize, and tray transitions remove focus emphasis but preserve background Hook markers.
 - PTY, file-editor, and subagent-transcript Pane kinds receive focus emphasis. Only the main PTY session receives Hook status colors.
 - Marker overlays must be children of `.ui-terminal-pane-content`, so every style starts at the terminal content boundary and never wraps the Pane Tab bar.
-- Settings sanitize the style and each `#RRGGBB` color independently, default to enabled behavior, persist through `settingsStore`, and participate in preference sync.
+- The `tab-top` style keeps a full-width top line and limits both side lines to `2%` of the content height. The `full` style keeps full-height sides and a bottom line.
+- Settings sanitize the enabled state, style, and each `#RRGGBB` color independently, default to disabled behavior, persist through `settingsStore`, and participate in preference sync.
 
 ```typescript
 type TerminalPaneMarkerStyle = "full" | "tab-top";
 
 interface TerminalPaneMarkerSettings {
+  enabled: boolean;
   style: TerminalPaneMarkerStyle;
   doneColor: string;
   failedColor: string;
@@ -1148,9 +1150,10 @@ interface TerminalPaneMarkerSettings {
 
 **Validation matrix**:
 
-- Missing settings object -> use the complete default object and enable marker behavior.
+- Missing settings object or missing/invalid `enabled` -> use the complete default object and disable marker behavior.
+- Explicit `enabled: true` -> preserve the existing marker behavior; disabling must retain style and color preferences.
 - Visible Pane count <= 1 -> render no marker, regardless of Tab count or Hook status.
-- Default focus color -> `#51A0CC`; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
+- Default focus color -> mix terminal muted 60% with terminal background 40%; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
 - Removed legacy `tab-frame` or any invalid style -> fall back only `style` to `tab-top`.
 - Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.
 - Valid lower-case hex -> normalize it to upper case.

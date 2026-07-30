@@ -4171,7 +4171,7 @@
 .ui-terminal-pane-marker__left {
   top: 0;
   width: var(--terminal-pane-marker-width);
-  height: 5%;
+  height: 2%;
 }
 
 .ui-terminal-pane-marker__right {

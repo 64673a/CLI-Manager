@@ -1,6 +1,7 @@
 export type TerminalPaneMarkerStyle = "full" | "tab-top";
 
 export interface TerminalPaneMarkerSettings {
+  enabled: boolean;
   style: TerminalPaneMarkerStyle;
   doneColor: string;
   failedColor: string;
@@ -17,9 +18,11 @@ export interface TerminalPaneMarkerPresentation {
   opacity: 0.5 | 1;
 }
 
-export const DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR = "#51A0CC";
+export const DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR =
+  "color-mix(in srgb, var(--terminal-theme-muted, #64748b) 60%, var(--terminal-theme-background, #0c0e10) 40%)";
 
 export const DEFAULT_TERMINAL_PANE_MARKER_SETTINGS: TerminalPaneMarkerSettings = {
+  enabled: false,
   style: "tab-top",
   doneColor: "#8FBF7F",
   failedColor: "#F7768E",
@@ -41,6 +44,9 @@ export function sanitizeTerminalPaneMarkerSettings(value: unknown): TerminalPane
     : DEFAULT_TERMINAL_PANE_MARKER_SETTINGS.style;
 
   return {
+    enabled: typeof raw.enabled === "boolean"
+      ? raw.enabled
+      : DEFAULT_TERMINAL_PANE_MARKER_SETTINGS.enabled,
     style,
     doneColor: sanitizeColor(raw.doneColor, DEFAULT_TERMINAL_PANE_MARKER_SETTINGS.doneColor),
     failedColor: sanitizeColor(raw.failedColor, DEFAULT_TERMINAL_PANE_MARKER_SETTINGS.failedColor),
@@ -58,7 +64,7 @@ export function resolveTerminalPaneMarker(input: {
   settings: TerminalPaneMarkerSettings;
   accentColor?: string;
 }): TerminalPaneMarkerPresentation | null {
-  if (!input.isLayoutVisible || !input.isSplitLayout) return null;
+  if (!input.settings.enabled || !input.isLayoutVisible || !input.isSplitLayout) return null;
 
   const status = input.isMainSession
     && (input.hookStatus === "done" || input.hookStatus === "failed" || input.hookStatus === "attention")
