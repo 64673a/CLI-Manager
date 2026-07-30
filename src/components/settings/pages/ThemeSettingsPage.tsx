@@ -61,7 +61,11 @@ import {
 } from "../../../lib/systemFonts";
 import { FontFamilySelect } from "../FontFamilySelect";
 import { pickByLanguage, useI18n } from "../../../lib/i18n";
-import type { TerminalPaneMarkerSettings, TerminalPaneMarkerStyle } from "../../../lib/terminalPaneMarker";
+import {
+  DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR,
+  type TerminalPaneMarkerSettings,
+  type TerminalPaneMarkerStyle,
+} from "../../../lib/terminalPaneMarker";
 
 const SWATCH_KEYS = ["background", "foreground", "red", "green", "blue", "cyan"] as const;
 const TERMINAL_FONT_FALLBACK = "monospace";
@@ -212,10 +216,23 @@ function PaneMarkerStylePreview({
       aria-label={label}
     >
       <Box className="relative h-14 overflow-hidden rounded-md bg-surface-container-lowest">
-        <Box className="absolute inset-x-0 top-6 h-0.5 bg-primary" />
-        <Box className="absolute left-0 top-6 w-0.5 bg-primary" style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }} />
-        <Box className="absolute right-0 top-6 w-0.5 bg-primary" style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }} />
-        {full && <Box className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />}
+        <Box className="absolute inset-x-0 top-6 h-0.5" bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR} />
+        <Box
+          className="absolute left-0 top-6 w-0.5"
+          bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
+          style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }}
+        />
+        <Box
+          className="absolute right-0 top-6 w-0.5"
+          bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
+          style={{ height: full ? "calc(100% - 1.5rem)" : "10%" }}
+        />
+        {full && (
+          <Box
+            className="absolute inset-x-0 bottom-0 h-0.5"
+            bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
+          />
+        )}
         <Box className="absolute inset-x-2 top-2 h-2 rounded-sm bg-surface-container-high" />
         <Box className="absolute inset-x-2 bottom-2 top-7 rounded-sm bg-surface-container" />
       </Box>

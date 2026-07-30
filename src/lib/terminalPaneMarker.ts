@@ -17,9 +17,11 @@ export interface TerminalPaneMarkerPresentation {
   opacity: 0.5 | 1;
 }
 
+export const DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR = "#51A0CC";
+
 export const DEFAULT_TERMINAL_PANE_MARKER_SETTINGS: TerminalPaneMarkerSettings = {
   style: "tab-frame",
-  doneColor: "#51A0CC",
+  doneColor: "#8FBF7F",
   failedColor: "#F7768E",
   attentionColor: "#FF9E64",
 };
@@ -70,7 +72,7 @@ export function resolveTerminalPaneMarker(input: {
       ? input.settings.failedColor
       : status === "attention"
         ? input.settings.attentionColor
-        : input.accentColor ?? "var(--terminal-theme-accent, #5b8def)";
+        : input.accentColor ?? DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR;
 
   return {
     status: status ?? "focus",

@@ -1122,7 +1122,7 @@ const option = {
 
 ### Convention: Visible terminal panes use non-layout marker overlays
 
-**What**: The active visible Pane uses the terminal theme accent, while the active main-session Tab may override it with persisted Hook done, failed, or attention colors. Render marker lines as an absolute, pointer-transparent overlay; never use layout borders, shadows, animation, or xterm remounting.
+**What**: The active visible Pane uses the dedicated default focus color `#51A0CC`, while the active main-session Tab may override it with persisted Hook done, failed, or attention colors. Render marker lines as an absolute, pointer-transparent overlay; never use layout borders, shadows, animation, or xterm remounting.
 
 **Contracts**:
 
@@ -1148,7 +1148,7 @@ interface TerminalPaneMarkerSettings {
 **Validation matrix**:
 
 - Missing settings object -> use the complete default object and enable marker behavior.
-- Default done color -> `#51A0CC`; failed and attention keep their independent defaults.
+- Default focus color -> `#51A0CC`; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
 - Invalid style -> fall back only `style` to `tab-frame`.
 - Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.
 - Valid lower-case hex -> normalize it to upper case.
@@ -1156,7 +1156,7 @@ interface TerminalPaneMarkerSettings {
 **Good/Base/Bad cases**:
 
 - Good: a focused Pane with `attention` uses the approval color at 2 px/full opacity.
-- Base: an unfocused Pane with Hook `running` has no marker; if the app is focused, only the active Pane keeps the accent line.
+- Base: an unfocused Pane with Hook `running` has no marker; if the app is focused, only the active Pane keeps the default focus line.
 - Bad: mounting the overlay under `.ui-terminal-pane`, because `inset: 0` then includes the Pane Tab bar; reading merged `tabNotifications` is also invalid because ordinary Shell completion could look like an Agent Hook result.
 
 ```tsx
