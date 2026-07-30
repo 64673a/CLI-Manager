@@ -216,6 +216,8 @@ export type HookEventType =
   | "StopFailure"
   | "PermissionRequest";
 
+export type TaskbarAttentionMode = "finite" | "untilFocused";
+
 const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
   "newTerminal",
   "closeTerminal",
@@ -409,6 +411,9 @@ export interface Settings {
   systemNotificationsEnabled: boolean;
   suppressSystemNotificationsWhenFocused: boolean;
   systemNotificationEvents: Record<HookEventType, boolean>;
+  taskbarAttentionEnabled: boolean;
+  taskbarAttentionMode: TaskbarAttentionMode;
+  taskbarAttentionFlashCount: number;
   /** Hook 设置页各可折叠区块的展开状态记忆。 */
   hookSettingsSectionsExpanded: HookSettingsSectionsExpanded;
   thirdPartyHookNotificationsEnabled: boolean;
@@ -591,6 +596,9 @@ const DEFAULTS: Settings = {
     StopFailure: true,
     PermissionRequest: true,
   },
+  taskbarAttentionEnabled: true,
+  taskbarAttentionMode: "finite",
+  taskbarAttentionFlashCount: 5,
   hookSettingsSectionsExpanded: { ...HOOK_SETTINGS_SECTIONS_EXPANDED_DEFAULT },
   thirdPartyHookNotificationsEnabled: true,
   thirdPartyHookTargets: [],
@@ -717,6 +725,18 @@ function migrateSystemNotificationEvents(value: unknown): Record<HookEventType, 
     }
   }
   return result;
+}
+
+function migrateTaskbarAttentionMode(value: unknown): TaskbarAttentionMode {
+  return value === "finite" || value === "untilFocused"
+    ? value
+    : DEFAULTS.taskbarAttentionMode;
+}
+
+function migrateTaskbarAttentionFlashCount(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 20
+    ? value
+    : DEFAULTS.taskbarAttentionFlashCount;
 }
 
 function migrateLastSettingsTab(value: unknown): LastSettingsTab {
@@ -1416,6 +1436,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         ? entries.suppressSystemNotificationsWhenFocused
         : DEFAULTS.suppressSystemNotificationsWhenFocused;
     entries.systemNotificationEvents = migrateSystemNotificationEvents(entries.systemNotificationEvents);
+    entries.taskbarAttentionEnabled =
+      typeof entries.taskbarAttentionEnabled === "boolean"
+        ? entries.taskbarAttentionEnabled
+        : DEFAULTS.taskbarAttentionEnabled;
+    entries.taskbarAttentionMode = migrateTaskbarAttentionMode(entries.taskbarAttentionMode);
+    entries.taskbarAttentionFlashCount = migrateTaskbarAttentionFlashCount(entries.taskbarAttentionFlashCount);
     entries.hookSettingsSectionsExpanded = migrateHookSettingsSectionsExpanded(entries.hookSettingsSectionsExpanded);
     entries.thirdPartyHookNotificationsEnabled =
       typeof entries.thirdPartyHookNotificationsEnabled === "boolean"

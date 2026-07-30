@@ -1143,6 +1143,7 @@ pub fn run() {
             commands::system_notification::is_wsl,
             commands::system_notification::send_notification_via_windows,
             commands::system_notification::send_interactive_system_notification,
+            commands::system_notification::set_taskbar_attention,
             statusline::statusline_get_status,
             statusline::statusline_load_settings,
             statusline::statusline_save_settings,

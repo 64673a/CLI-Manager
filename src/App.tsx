@@ -331,6 +331,33 @@ async function isMainWindowFocused(): Promise<boolean> {
   }
 }
 
+async function clearTaskbarAttention(): Promise<void> {
+  if (!IN_TAURI) return;
+  try {
+    await invoke("set_taskbar_attention", { mode: null });
+  } catch (err) {
+    debugConsoleWarn("[Taskbar Attention] Failed to clear:", err);
+  }
+}
+
+async function sendTaskbarAttention(payload: CliHookPayload): Promise<void> {
+  if (!IN_TAURI || !isSystemNotificationEvent(payload.event)) return;
+  const settings = useSettingsStore.getState();
+  if (!settings.taskbarAttentionEnabled || !settings.systemNotificationEvents[payload.event]) return;
+  if (await isMainWindowFocused()) return;
+
+  try {
+    await invoke("set_taskbar_attention", {
+      mode: settings.taskbarAttentionMode,
+      flashCount: settings.taskbarAttentionMode === "finite"
+        ? settings.taskbarAttentionFlashCount
+        : undefined,
+    });
+  } catch (err) {
+    debugConsoleWarn("[Taskbar Attention] Failed to start:", err);
+  }
+}
+
 type HookNotificationTargetActivator = (tabId: string) => void | Promise<void>;
 
 async function sendSystemNotification(payload: CliHookPayload, tabId: string | null, tabTitle?: string | null): Promise<void> {
@@ -805,6 +832,8 @@ function App() {
         return;
       }
       const boundTabId = useTerminalStore.getState().handleCliHookEvent(event.payload);
+      // 任务栏提醒独立于 Tab 绑定和系统 Toast；外部 Hook 也可以提醒。
+      void sendTaskbarAttention(event.payload);
       // External hooks (no PTY tab env) still carry a synthetic tabId like external:grok:<session>.
       // Prefer bound session when present; otherwise fall back so toast/system notifications still fire.
       const tabId = boundTabId ?? event.payload.tabId?.trim() ?? null;
@@ -1473,7 +1502,10 @@ function App() {
   useEffect(() => {
     if (!IN_TAURI) return;
     const unlistenPromise = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-      if (focused) backgroundTaskModeActive = false;
+      if (focused) {
+        backgroundTaskModeActive = false;
+        void clearTaskbarAttention();
+      }
     });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});

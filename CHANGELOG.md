@@ -2,6 +2,10 @@
 
 ## [V1.3.3] - 2026-07-29
 
+### 新增
+
+- **Windows Hook 任务栏提醒**：CLI-Manager 失焦时可按现有 Hook 事件筛选独立触发任务栏闪烁，默认闪烁 5 次，也可持续到窗口重新聚焦；系统 Toast 与任务栏提醒分别启停，未绑定终端 Tab 的外部 Hook 同样可提醒。（Refs #176）
+
 ### 调整
 
 - **R2 发布域名动态注入**：GitHub Actions 的 `R2_PUBLIC_BASE_URL` 现在是桌面更新器、SSH Agent 清单、安装命令及发布脚本的唯一构建配置源；发布前统一校验 HTTPS Origin，并继续保留 GitHub Release 备用源与静态更新签名公钥，后续更换 R2 自定义域名无需全仓库替换。
@@ -12,6 +16,7 @@
 
 ### 修复
 
+- **Hook 安装状态检测入口**：Claude、Codex、Pi、Grok 桥接关闭后仍显示真实安装状态徽标，并可通过页面顶部统一刷新；桥接关闭继续隐藏模块、路径与安装操作，刷新不会自动启用或重装 Hook。（Refs #176）
 - **Pi Coding Agent 用户消息渲染**：修复 OSC 133 扫描器遗漏相邻集成序列之间普通文本的问题，Pi 提交后的用户消息、前景色与 ANSI 控制序列不再被前端归一化吞掉；Pi 识别与诊断职责保持独立，撤销无效的 `DEC 2026` 过滤和 viewport 刷新方案。（Refs #177）
 - **Pi Coding Agent 输入法、工具状态与历史恢复**：中文输入法的原生候选框改为锚定限定范围内最后一条 Pi composer 底边，组合文字仍保留在真实输入行；新 PTY 缺省声明 truecolor，Windows 不修改 `TERM`，WSL 自动转发 `COLORTERM`。普通工具调用背景在写入 xterm 前由可跨 frame 的 CSI 转换器精确清除，不再依赖私有缓冲区 API，并保留工具前景语义色、用户/自定义背景、真实 Diff 和其他 ANSI/OSC。Pi 本地历史会话支持 `pi --session <session-id>` 精确恢复，清理冲突参数并按 Worktree、来源/目录、当前筛选项目顺序选择配置；SSH Pi 恢复仍不支持。CLI 上下文、IME、ANSI、诊断和历史恢复已按职责拆分。（Refs #177）
 - **SSH Agent Hook 动态数量校验**：主程序不再硬编码 Claude/Codex Hook 条目数量，改为校验 Agent 上报数量的非零、安全上限及已管理条目关系；兼容新增提问 Hook 的 Agent 和旧版 Agent，无需仅因 Hook 数量变化重新部署远端 Agent。

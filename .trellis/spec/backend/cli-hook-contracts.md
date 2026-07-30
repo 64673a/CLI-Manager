@@ -204,6 +204,80 @@ return (
 );
 ```
 
+## Scenario: Windows Taskbar Attention And Disabled-Bridge Status Visibility
+
+### 1. Scope / Trigger
+
+- Trigger: a supported Hook event arrives while the Windows main window is not focused, or the user inspects Hook installation after disabling one or more bridges.
+- Applies to: persisted notification preferences, shared event filtering, frontend Hook routing, Tauri taskbar IPC, Windows `FlashWindowEx`, and Hook settings status presentation.
+
+### 2. Signatures
+
+```text
+set_taskbar_attention(mode: "finite" | "untilFocused" | null, flashCount?: 1..20)
+
+taskbarAttentionEnabled: boolean = true
+taskbarAttentionMode: "finite" | "untilFocused" = "finite"
+taskbarAttentionFlashCount: integer 1..20 = 5
+```
+
+### 3. Contracts
+
+- Taskbar attention and system Toast have independent master switches and share `systemNotificationEvents`; do not rename that persisted key or reset existing event choices.
+- A qualifying taskbar event does not require a bound terminal Tab. Background-task mode never bypasses the taskbar master switch or shared event filter.
+- `finite` flashes only the taskbar button for the requested count. `untilFocused` continues until the main window is focused. A focused-window event sends the stop mode even after a finite request, so early focus always clears attention.
+- The command validates mode and finite count at the Rust boundary. Non-Windows targets safely validate and perform no platform action.
+- Taskbar failures are diagnostic-only and cannot block application Toast, system Toast, Tab state, replay, or third-party delivery.
+- Hook status inspection remains unconditional for Claude, Codex, Pi, and Grok. A disabled bridge still shows its status pill and participates in explicit refresh, but remains excluded from health aggregation, reinstall, environment injection, stats availability, and Claude auto-repair.
+- Disabling a bridge hides module cards, paths, and install/uninstall actions. Refresh never enables a bridge or installs a Hook.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|-----------|-------------------|
+| Finite count 1 or 20 | Accept and request exactly that count. |
+| Finite count missing, 0, or 21 | Reject at the Rust boundary. |
+| Unknown mode | Reject without calling Win32. |
+| Mode `null` | Issue `FLASHW_STOP`. |
+| Window focused | Do not start; actively stop an existing request. |
+| Event has no Tab binding | Taskbar may alert; interactive system Toast keeps its existing Tab requirement. |
+| Bridge disabled | Detect and display status; no install, repair, health, or runtime enablement. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: the app is unfocused, system Toast is disabled, taskbar attention is enabled, and an unbound external Grok Stop event flashes the taskbar without opening or focusing the window.
+- Base: the app is focused; Hook state and application Toast behavior remain unchanged, and any prior taskbar request is stopped.
+- Bad: background-task mode bypasses the taskbar switch/event filter, or a disabled bridge hides its status and prevents explicit inspection.
+
+### 6. Tests Required
+
+- Rust unit tests for finite 1/20, rejected 0/21/missing count, until-focused flags, and stop flags.
+- Run `npx tsc --noEmit`, `cargo check`, `cargo test`, and `git diff --check`.
+- Manual Windows verification for unfocused, minimized, tray-hidden, finite, until-focused, and independent Toast/taskbar switch combinations.
+- Manual Hook settings verification for all four sources in enabled/disabled and missing/not-installed/partial/installed states.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (tabId && settings.systemNotificationsEnabled) {
+  startTaskbarAttention();
+}
+```
+
+This incorrectly couples taskbar attention to both Tab binding and system Toast.
+
+#### Correct
+
+```ts
+if (settings.taskbarAttentionEnabled && settings.systemNotificationEvents[payload.event]) {
+  startTaskbarAttention();
+}
+```
+
+The taskbar sink is independent and consumes only its own master switch plus the shared event filter.
+
 ## Scenario: Sub-Agent Transcript Hook
 
 ### 1. Scope / Trigger
