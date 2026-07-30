@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 65
+- **Total Sessions**: 66
 - **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~239 | Active |
+| `journal-2.md` | ~272 | Active |
 | `journal-1.md` | ~2014 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 66 | 2026-07-30 | 简化终端状态标记设置 | `c525a6c8` | `feat/terminal-status-marker-settings` |
 | 65 | 2026-07-30 | 单 Pane 布局隐藏状态标记 | `396d1c38` | `master` |
 | 64 | 2026-07-30 | 纠正 Pane 默认焦点边框颜色 | `bdf0ec49` | `master` |
 | 63 | 2026-07-30 | 调整 Pane 完成状态默认颜色 | `eca51e4c` | `master` |

@@ -237,3 +237,36 @@ Pane 标记增加当前可见分屏判定：单 Pane 即使包含多个 Tab 或 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: 简化终端状态标记设置
+
+**Date**: 2026-07-30
+**Task**: 简化终端状态标记设置
+**Branch**: `feat/terminal-status-marker-settings`
+
+### Summary
+
+设置区块由 Pane 状态标记更名为终端状态标记，补齐中英文标题、描述和 ARIA；移除 Tab 框线选项，仅保留完整边框与顶部标记，旧 tab-frame 配置自动迁移到 tab-top。同步测试、组件规范、V1.3.3 变更日志与功能清单。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c525a6c8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
