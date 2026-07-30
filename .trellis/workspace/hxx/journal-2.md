@@ -71,3 +71,36 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: Hook 任务栏提醒与安装状态检测修复
+
+**Date**: 2026-07-30
+**Task**: Hook 任务栏提醒与安装状态检测修复
+**Branch**: `master`
+
+### Summary
+
+为 Windows Hook 增加独立任务栏闪烁提醒与聚焦停止逻辑，补齐设置迁移、同步、双语 UI 和 Rust 参数测试；桥接关闭后仍可统一刷新并查看四种 CLI 的真实安装状态。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51566bdb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
