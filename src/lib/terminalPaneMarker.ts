@@ -1,4 +1,4 @@
-export type TerminalPaneMarkerStyle = "full" | "tab-top" | "tab-frame";
+export type TerminalPaneMarkerStyle = "full" | "tab-top";
 
 export interface TerminalPaneMarkerSettings {
   style: TerminalPaneMarkerStyle;
@@ -20,7 +20,7 @@ export interface TerminalPaneMarkerPresentation {
 export const DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR = "#51A0CC";
 
 export const DEFAULT_TERMINAL_PANE_MARKER_SETTINGS: TerminalPaneMarkerSettings = {
-  style: "tab-frame",
+  style: "tab-top",
   doneColor: "#8FBF7F",
   failedColor: "#F7768E",
   attentionColor: "#FF9E64",
@@ -36,7 +36,7 @@ export function sanitizeTerminalPaneMarkerSettings(value: unknown): TerminalPane
   const raw = typeof value === "object" && value !== null
     ? value as Partial<Record<keyof TerminalPaneMarkerSettings, unknown>>
     : {};
-  const style = raw.style === "full" || raw.style === "tab-top" || raw.style === "tab-frame"
+  const style = raw.style === "full" || raw.style === "tab-top"
     ? raw.style
     : DEFAULT_TERMINAL_PANE_MARKER_SETTINGS.style;
 

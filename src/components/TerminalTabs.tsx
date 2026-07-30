@@ -111,7 +111,6 @@ import {
 import {
   resolveTerminalPaneMarker,
   type TerminalPaneMarkerSettings,
-  type TerminalPaneMarkerStyle,
 } from "../lib/terminalPaneMarker";
 
 const HistoryWorkspace = lazy(() =>
@@ -1827,9 +1826,7 @@ function PaneLeafView({
     hookStatus: effectivePaneActiveSessionId ? hookNotifications[effectivePaneActiveSessionId] ?? "none" : "none",
     settings: paneMarkerSettings,
   });
-  const paneMarkerStyle: TerminalPaneMarkerStyle = paneMarkerSettings.style === "tab-frame" && hideTabBar
-    ? "tab-top"
-    : paneMarkerSettings.style;
+  const paneMarkerStyle = paneMarkerSettings.style;
 
   return (
     <div className="ui-terminal-pane relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">

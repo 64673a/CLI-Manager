@@ -1122,14 +1122,13 @@ export function ThemeSettingsPage() {
         >
           <Stack gap="md">
             <SimpleGrid
-              cols={{ base: 1, sm: 3 }}
+              cols={{ base: 1, sm: 2 }}
               role="group"
               aria-label={t("settings.terminal.paneMarker.styleAria")}
             >
               {([
                 ["full", "settings.terminal.paneMarker.style.full"],
                 ["tab-top", "settings.terminal.paneMarker.style.tabTop"],
-                ["tab-frame", "settings.terminal.paneMarker.style.tabFrame"],
               ] as const).map(([style, labelKey]) => (
                 <PaneMarkerStylePreview
                   key={style}

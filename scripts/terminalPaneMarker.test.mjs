@@ -36,7 +36,7 @@ const resolve = (overrides = {}) => resolveTerminalPaneMarker({
 
 test("missing settings migrate to enabled defaults", () => {
   assert.deepEqual(sanitizeTerminalPaneMarkerSettings(undefined), {
-    style: "tab-frame",
+    style: "tab-top",
     doneColor: "#8FBF7F",
     failedColor: "#F7768E",
     attentionColor: "#FF9E64",
@@ -57,6 +57,22 @@ test("Pane marker overlay is anchored inside terminal content instead of the Tab
   assert.doesNotMatch(terminalTabs, /ui-terminal-pane-marker__tab-bottom/);
 });
 
+test("removed tab-frame settings migrate to tab-top", () => {
+  assert.equal(sanitizeTerminalPaneMarkerSettings({ style: "tab-frame" }).style, "tab-top");
+});
+
+test("settings use the Terminal Status Marker name and expose no tab-frame option", () => {
+  const settingsPage = readFileSync(
+    new URL("../src/components/settings/pages/ThemeSettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  const i18n = readFileSync(new URL("../src/lib/i18n.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(settingsPage, /\["tab-frame",/);
+  assert.doesNotMatch(i18n, /paneMarker\.style\.tabFrame/);
+  assert.match(i18n, /"settings\.terminal\.paneMarker\.title": "终端状态标记"/);
+  assert.match(i18n, /"settings\.terminal\.paneMarker\.title": "Terminal Status Markers"/);
+});
+
 test("single-Pane layouts render no marker even with multiple Tabs or Hook status", () => {
   assert.equal(resolve({ isSplitLayout: false }), null);
   assert.equal(resolve({ isSplitLayout: false, hookStatus: "done" }), null);
@@ -69,7 +85,7 @@ test("invalid style and colors fall back independently", () => {
     failedColor: "red",
     attentionColor: "#abcdef",
   }), {
-    style: "tab-frame",
+    style: "tab-top",
     doneColor: "#112233",
     failedColor: "#F7768E",
     attentionColor: "#ABCDEF",

@@ -1132,11 +1132,11 @@ const option = {
 - Hidden Workspans and fullscreen-excluded or filtered-out Pane layouts render no marker. Existing Workspan summary dots remain authoritative for hidden layouts.
 - Window blur, document hiding, minimize, and tray transitions remove focus emphasis but preserve background Hook markers.
 - PTY, file-editor, and subagent-transcript Pane kinds receive focus emphasis. Only the main PTY session receives Hook status colors.
-- Marker overlays must be children of `.ui-terminal-pane-content`, so every style starts at the terminal content boundary and never wraps the Pane Tab bar. `tab-frame` degrades to `tab-top` when the Tab bar is hidden.
+- Marker overlays must be children of `.ui-terminal-pane-content`, so every style starts at the terminal content boundary and never wraps the Pane Tab bar.
 - Settings sanitize the style and each `#RRGGBB` color independently, default to enabled behavior, persist through `settingsStore`, and participate in preference sync.
 
 ```typescript
-type TerminalPaneMarkerStyle = "full" | "tab-top" | "tab-frame";
+type TerminalPaneMarkerStyle = "full" | "tab-top";
 
 interface TerminalPaneMarkerSettings {
   style: TerminalPaneMarkerStyle;
@@ -1151,7 +1151,7 @@ interface TerminalPaneMarkerSettings {
 - Missing settings object -> use the complete default object and enable marker behavior.
 - Visible Pane count <= 1 -> render no marker, regardless of Tab count or Hook status.
 - Default focus color -> `#51A0CC`; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
-- Invalid style -> fall back only `style` to `tab-frame`.
+- Removed legacy `tab-frame` or any invalid style -> fall back only `style` to `tab-top`.
 - Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.
 - Valid lower-case hex -> normalize it to upper case.
 
