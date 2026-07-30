@@ -280,9 +280,16 @@ const withVisibleSelectionTheme = (theme: ITheme, searchActive = false): ITheme 
   };
 };
 
-const cleanupExpiredAttachments = async (rootPath: string) => (
-  invoke<number>("file_cleanup_expired_attachments", { rootPath })
-);
+let expiredAttachmentsCleanup: Promise<number> | null = null;
+
+const cleanupExpiredAttachmentsOnce = () => {
+  if (expiredAttachmentsCleanup) return expiredAttachmentsCleanup;
+  expiredAttachmentsCleanup = invoke<number>("file_cleanup_expired_attachments").catch((err) => {
+    expiredAttachmentsCleanup = null;
+    throw err;
+  });
+  return expiredAttachmentsCleanup;
+};
 
 const openHttpUrl = (sessionId: string, uri: string) => {
   if (!/^https?:\/\//i.test(uri)) return;
@@ -414,7 +421,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   const displayTransformOutputRef = useRef<(text: string) => string>((text) => text);
   const displayAfterWriteRef = useRef<((terminal: Terminal) => void) | null>(null);
   const piTerminalCompatibilityRef = useRef<PiTerminalCompatibility | null>(null);
-  const cleanedAttachmentRootsRef = useRef<Set<string>>(new Set());
   const terminalScrollbackCustomEnabled = useSettingsStore((s) => s.terminalScrollbackCustomEnabled);
   const terminalScrollbackRows = useSettingsStore((s) => s.terminalScrollbackRows);
   const effectiveTerminalScrollbackRows = terminalScrollbackCustomEnabled
@@ -462,15 +468,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     const platform = await getOsPlatform();
     osPlatformRef.current = platform;
     return platform;
-  };
-
-  const cleanupExpiredAttachmentsOnce = (rootPath: string | null | undefined) => {
-    if (!rootPath || cleanedAttachmentRootsRef.current.has(rootPath)) return;
-    cleanedAttachmentRootsRef.current.add(rootPath);
-    cleanupExpiredAttachments(rootPath).catch((err) => {
-      cleanedAttachmentRootsRef.current.delete(rootPath);
-      logError("Failed to cleanup expired terminal attachments", { sessionId, rootPath, err });
-    });
   };
 
   useEffect(() => {
@@ -565,7 +562,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     getTerminalRenderedCellSize,
     setSuggestionGhost,
     getOsPlatformForPathQuoting,
-    cleanupExpiredAttachmentsOnce,
   });
 
   // Clear suggestions when search opens (must come after hook call to read searchOpen)
@@ -626,11 +622,9 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   });
 
   useEffect(() => {
-    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
-    const project = session?.projectId
-      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
-      : null;
-    cleanupExpiredAttachmentsOnce(project?.path || session?.cwd || null);
+    void cleanupExpiredAttachmentsOnce().catch((err) => {
+      logError("Failed to cleanup expired terminal attachments", { sessionId, err });
+    });
   }, [sessionId]);
 
   const getPtyWriteErrorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));

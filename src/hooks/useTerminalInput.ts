@@ -60,10 +60,9 @@ import { TUI_BORDER_CHAR_PATTERN, TUI_COMPOSER_PROMPT_PATTERN } from "../lib/ter
 import { logError } from "../lib/logger";
 import { defaultShellForOs } from "../lib/shell";
 import type { OsPlatform } from "../lib/shell";
-import { formatShellPathList, joinLocalPath, normalizeShellForKnownOs } from "../lib/terminalShellPath";
+import { formatShellPathList, normalizeShellForKnownOs } from "../lib/terminalShellPath";
 import type { CommandHistoryEntry, CommandTemplate, TerminalSession } from "../lib/types";
 import { useCommandHistoryStore } from "../stores/commandHistoryStore";
-import { useProjectStore } from "../stores/projectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { terminalProcessManager } from "../terminal/core/TerminalProcessManager";
 import { useTemplateStore } from "../stores/templateStore";
@@ -98,7 +97,6 @@ interface UseTerminalInputOptions {
   getTerminalRenderedCellSize: (terminal: Terminal, container: HTMLElement, fallbackFontSize: number) => TerminalCellSize;
   setSuggestionGhost: Dispatch<SetStateAction<TerminalSuggestionGhostState | null>>;
   getOsPlatformForPathQuoting: () => Promise<Parameters<typeof normalizeShellForKnownOs>[1]>;
-  cleanupExpiredAttachmentsOnce: (rootPath: string | null | undefined) => void;
 }
 
 interface SuggestionContextCache {
@@ -184,7 +182,6 @@ export function useTerminalInput({
   getTerminalRenderedCellSize,
   setSuggestionGhost,
   getOsPlatformForPathQuoting,
-  cleanupExpiredAttachmentsOnce,
 }: UseTerminalInputOptions): UseTerminalInputResult {
   const inputBufferRef = useRef("");
   const inputCursorIndexRef = useRef(0);
@@ -1113,32 +1110,14 @@ export function useTerminalInput({
     };
   };
 
-  const getCurrentPasteContext = () => {
-    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
-    const project = session?.projectId
-      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
-      : null;
-    return { session, project };
-  };
-
-  const savePastedImageForTerminal = async (
-    file: File,
-    context: ReturnType<typeof getCurrentPasteContext>,
-  ): Promise<string | null> => {
-    const { session, project } = context;
-    const attachRootPath = project?.path || session?.cwd || null;
-    if (!attachRootPath) return null;
-
+  const savePastedImageForTerminal = async (file: File): Promise<string | null> => {
     try {
       const fileName = createClipboardImageFileName(file);
       const dataBase64 = arrayBufferToBase64(await file.arrayBuffer());
-      const attachedRelativePath = await invoke<string>("file_attach_data", {
-        rootPath: attachRootPath,
+      return await invoke<string>("file_attach_data", {
         fileName,
         dataBase64,
       });
-      cleanupExpiredAttachmentsOnce(attachRootPath);
-      return joinLocalPath(attachRootPath, attachedRelativePath);
     } catch (err) {
       logError("Failed to attach pasted terminal image", { sessionId, err });
       toast.error("截图粘贴失败", { description: String(err) });
@@ -1167,11 +1146,10 @@ export function useTerminalInput({
     });
     const onPaste = (event: ClipboardEvent) => {
       const imageFile = getClipboardImageFile(event.clipboardData);
-      const context = getCurrentPasteContext();
       if (imageFile) {
         event.preventDefault();
         event.stopPropagation();
-        void savePastedImageForTerminal(imageFile, context).then(async (path) => {
+        void savePastedImageForTerminal(imageFile).then(async (path) => {
           if (!path) return;
           pasteIntoTerminal(formatShellPathList([path], await getShellForPathQuoting()));
           terminal.focus();
@@ -1322,7 +1300,7 @@ export function useTerminalInput({
 
     const imageFile = await readClipboardImageFile();
     if (imageFile) {
-      const path = await savePastedImageForTerminal(imageFile, getCurrentPasteContext());
+      const path = await savePastedImageForTerminal(imageFile);
       return path ? formatShellPathList([path], await getShellForPathQuoting()) : "";
     }
 
