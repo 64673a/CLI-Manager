@@ -72,6 +72,7 @@ import {
   isClaudeTerminalContext,
   isCodexTerminalContext,
 } from "../terminal/browser/TerminalCliContext";
+import { createTerminalMouseInteractionOptions } from "../terminal/browser/TerminalMouseInteraction";
 import {
   createPiTerminalCompatibility,
   type PiTerminalCompatibility,
@@ -985,6 +986,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
         .catch(() => showKind("missing"));
     };
     const terminal = new Terminal({
+      ...createTerminalMouseInteractionOptions(),
       cols: 80,
       rows: 24,
       cursorBlink: false,
@@ -997,9 +999,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       scrollback: effectiveTerminalScrollbackRows,
       scrollOnEraseInDisplay: true,
       allowProposedApi: true,
-      // Keep text selection available when a shell or TUI enables mouse reporting.
-      // Hold Alt to send mouse clicks and drags to the underlying application.
-      mouseEventsRequireAlt: true,
       minimumContrastRatio: getTerminalMinimumContrastRatio(baseTheme, isTransparentRef.current),
       // xterm cannot toggle transparency after construction, so keep it enabled
       // even though WebGL is disabled while a background image is active.

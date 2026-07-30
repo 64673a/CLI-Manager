@@ -1414,6 +1414,37 @@ Do not keep WebGL enabled while a terminal background image is active. The defau
 
 **Tests**: Verify normal click-to-focus and mouse text selection still work. Do not add a click-to-caret acceptance test because cursor relocation is intentionally absent.
 
+### Convention: Mouse-aware TUIs receive unmodified mouse reports
+
+**What**: xterm instances must use the shared `TerminalMouseInteraction` policy. When a PTY application enables mouse reporting, ordinary click, drag, and move events go to that application; users hold Shift to select terminal text. This is separate from the unsupported click-to-caret behavior above.
+
+**Why**: Full-screen TUIs such as Grok render their own scrollback and scrollbar inside terminal cells. Setting `mouseEventsRequireAlt: true` makes those controls look clickable while silently withholding the mouse reports unless Alt is held. Wheel events are unaffected, which can hide the mismatch during testing.
+
+**Correct**:
+
+```tsx
+const terminal = new Terminal({
+  ...createTerminalMouseInteractionOptions(),
+});
+```
+
+**Wrong**:
+
+```tsx
+const terminal = new Terminal({
+  mouseEventsRequireAlt: true,
+});
+```
+
+**Contracts**:
+
+- Keep the policy generic; do not detect Grok or another CLI by process name.
+- A shell that has not enabled mouse reporting keeps normal xterm text selection behavior.
+- A mouse-aware TUI receives ordinary mouse reports; Shift remains the selection modifier.
+- Mouse policy belongs in `src/terminal/browser/TerminalMouseInteraction.ts`; `XTermTerminal` only assembles it.
+
+**Tests**: Run `node --test scripts/terminalMouseInteraction.test.mjs` and `npx tsc --noEmit`; manually verify Grok fullscreen click/drag/wheel, Shift+drag selection in a mouse-aware TUI, and ordinary shell selection.
+
 ### Convention: xterm Windows PTY and paste handling
 
 **What**: Internal xterm instances backed by the app's Windows PTY must use xterm's Windows compatibility and native paste path.

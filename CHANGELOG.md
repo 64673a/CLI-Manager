@@ -26,6 +26,7 @@
 
 ### 修复
 
+- **Grok TUI 鼠标交互**：全屏 Grok 等启用终端鼠标协议的 TUI 现在可直接接收普通点击与拖动，自绘滚动条不再要求按住 Alt；文本选择遵循标准终端行为，鼠标策略已从 `XTermTerminal` 按职责拆分。
 - **Hook 安装状态检测入口**：Claude、Codex、Pi、Grok 桥接关闭后仍显示真实安装状态徽标，并可通过页面顶部统一刷新；桥接关闭继续隐藏模块、路径与安装操作，刷新不会自动启用或重装 Hook。（Refs #176）
 - **Pi Coding Agent 用户消息渲染**：修复 OSC 133 扫描器遗漏相邻集成序列之间普通文本的问题，Pi 提交后的用户消息、前景色与 ANSI 控制序列不再被前端归一化吞掉；Pi 识别与诊断职责保持独立，撤销无效的 `DEC 2026` 过滤和 viewport 刷新方案。（Refs #177）
 - **Pi Coding Agent 输入法、工具状态与历史恢复**：中文输入法的原生候选框改为锚定限定范围内最后一条 Pi composer 底边，组合文字仍保留在真实输入行；新 PTY 缺省声明 truecolor，Windows 不修改 `TERM`，WSL 自动转发 `COLORTERM`。普通工具调用背景在写入 xterm 前由可跨 frame 的 CSI 转换器精确清除，不再依赖私有缓冲区 API，并保留工具前景语义色、用户/自定义背景、真实 Diff 和其他 ANSI/OSC。Pi 本地历史会话支持 `pi --session <session-id>` 精确恢复，清理冲突参数并按 Worktree、来源/目录、当前筛选项目顺序选择配置；SSH Pi 恢复仍不支持。CLI 上下文、IME、ANSI、诊断和历史恢复已按职责拆分。（Refs #177）
