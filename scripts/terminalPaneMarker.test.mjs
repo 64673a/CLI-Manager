@@ -71,15 +71,41 @@ test("Pane marker overlay is anchored inside terminal content instead of the Tab
   assert.doesNotMatch(terminalTabs, /ui-terminal-pane-marker__tab-bottom/);
 });
 
-test("default focus color follows the terminal theme and tab-top corners use 2 percent", () => {
+test("default focus color follows the terminal theme and settings reuse the production marker overlay", () => {
   const styles = readFileSync(new URL("../src/styles/components.css", import.meta.url), "utf8");
   const settingsPage = readFileSync(
     new URL("../src/components/settings/pages/ThemeSettingsPage.tsx", import.meta.url),
     "utf8",
   );
   assert.equal(DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR, defaultFocusColor);
-  assert.match(styles, /\.ui-terminal-pane-marker__right,[\s\S]*?height:\s*2%;/);
-  assert.equal(settingsPage.match(/full \? "calc\(100% - 1\.5rem\)" : "2%"/g)?.length, 2);
+  assert.match(styles, /\.ui-terminal-pane-marker__right,[\s\S]*?height:\s*var\(--terminal-pane-marker-side-height,\s*2%\);/);
+  assert.match(settingsPage, /grid-cols-\[minmax\(0,0\.9fr\)_minmax\(0,1\.1fr\)\][\s\S]*?PowerShell[\s\S]*?Codex/);
+  assert.match(settingsPage, /"--terminal-pane-marker-side-height": "8px"/);
+  assert.match(settingsPage, /flex min-w-0 flex-col[\s\S]*?min-h-0 flex-1 overflow-hidden/);
+  assert.doesNotMatch(settingsPage, /h-\[72px\]/);
+  assert.match(settingsPage, /className="ui-terminal-pane-marker"[\s\S]*?data-marker-style=\{style\}/);
+  assert.match(settingsPage, /"--terminal-pane-marker-color": markerColor/);
+  assert.match(settingsPage, /ui-terminal-pane-marker__top[\s\S]*?ui-terminal-pane-marker__right[\s\S]*?ui-terminal-pane-marker__bottom[\s\S]*?ui-terminal-pane-marker__left/);
+  assert.doesNotMatch(settingsPage, /full \? "calc\(100% - 1\.5rem\)"/);
+  assert.match(settingsPage, /selected && <Check/);
+  assert.match(settingsPage, /borderColor: "var\(--border\)"/);
+  assert.match(settingsPage, /background: selected[\s\S]*?color-mix\(in srgb, var\(--primary\) 8%, var\(--surface-container-low\)\)/);
+  assert.doesNotMatch(settingsPage, /pointer-events-none absolute inset-0 z-20 rounded-xl border-2/);
+  assert.doesNotMatch(settingsPage, /boxShadow: selected/);
+});
+
+test("settings status color options drive both Pane marker previews", () => {
+  const settingsPage = readFileSync(
+    new URL("../src/components/settings/pages/ThemeSettingsPage.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(settingsPage, /type PaneMarkerPreviewColorKey = "doneColor" \| "failedColor" \| "attentionColor"/);
+  assert.match(settingsPage, /useState<PaneMarkerPreviewColorKey>\("doneColor"\)/);
+  assert.match(settingsPage, /const paneMarkerPreviewColor = terminalPaneMarker\[paneMarkerPreviewColorKey\]/);
+  assert.match(settingsPage, /markerColor=\{paneMarkerPreviewColor\}/);
+  assert.match(settingsPage, /onClick=\{\(\) => setPaneMarkerPreviewColorKey\(key\)\}[\s\S]*?aria-pressed=\{selected\}/);
+  assert.match(settingsPage, /onPointerDown=\{\(\) => setPaneMarkerPreviewColorKey\(key\)\}/);
+  assert.match(settingsPage, /onFocus=\{\(\) => setPaneMarkerPreviewColorKey\(key\)\}/);
 });
 
 test("removed tab-frame settings migrate to tab-top", () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   ActionIcon,
   Badge,
@@ -20,7 +20,7 @@ import {
 } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, CircleHelp, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   TERMINAL_THEME_GROUPS,
   TERMINAL_THEME_PRESETS,
@@ -62,7 +62,6 @@ import {
 import { FontFamilySelect } from "../FontFamilySelect";
 import { pickByLanguage, useI18n } from "../../../lib/i18n";
 import {
-  DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR,
   type TerminalPaneMarkerSettings,
   type TerminalPaneMarkerStyle,
 } from "../../../lib/terminalPaneMarker";
@@ -70,6 +69,13 @@ import {
 const SWATCH_KEYS = ["background", "foreground", "red", "green", "blue", "cyan"] as const;
 const TERMINAL_FONT_FALLBACK = "monospace";
 type TerminalThemeLibraryMode = "light" | "dark" | "system";
+type PaneMarkerPreviewColorKey = "doneColor" | "failedColor" | "attentionColor";
+
+const PANE_MARKER_PREVIEW_COLOR_OPTIONS = [
+  ["doneColor", "settings.terminal.paneMarker.color.done"],
+  ["failedColor", "settings.terminal.paneMarker.color.failed"],
+  ["attentionColor", "settings.terminal.paneMarker.color.attention"],
+] as const satisfies ReadonlyArray<readonly [PaneMarkerPreviewColorKey, string]>;
 
 const FONT_FAMILY_OPTIONS: { value: string; label: string; labelEn?: string }[] = [
   { value: "Cascadia Code, Consolas, monospace", label: "Cascadia Code（推荐）", labelEn: "Cascadia Code (Recommended)" },
@@ -194,51 +200,102 @@ function CollapsibleSettingsSection({
 function PaneMarkerStylePreview({
   style,
   label,
+  markerColor,
   selected,
   onSelect,
 }: {
   style: TerminalPaneMarkerStyle;
   label: string;
+  markerColor: string;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const full = style === "full";
+  const previewBorder = "color-mix(in srgb, var(--terminal-theme-muted, #64748b) 34%, transparent)";
+  const previewChrome =
+    "color-mix(in srgb, var(--terminal-theme-background, #0c0e10) 84%, var(--terminal-theme-foreground, #f8fafc) 16%)";
+  const markerStyle = {
+    "--terminal-pane-marker-color": markerColor,
+    "--terminal-pane-marker-width": "2px",
+    "--terminal-pane-marker-opacity": 1,
+    "--terminal-pane-marker-side-height": "8px",
+  } as CSSProperties;
+
   return (
     <UnstyledButton
       type="button"
-      className="ui-focus-ring ui-selection-card rounded-xl border p-3"
+      className="ui-focus-ring ui-selection-card cursor-pointer rounded-xl border p-3 transition-colors"
       style={{
-        borderColor: selected ? "var(--primary)" : "var(--border)",
-        background: selected ? "color-mix(in srgb, var(--primary) 8%, transparent)" : "transparent",
+        borderColor: "var(--border)",
+        background: selected
+          ? "color-mix(in srgb, var(--primary) 8%, var(--surface-container-low))"
+          : "transparent",
       }}
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={label}
     >
-      <Box className="relative h-14 overflow-hidden rounded-md bg-surface-container-lowest">
-        <Box className="absolute inset-x-0 top-6 h-0.5" bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR} />
-        <Box
-          className="absolute left-0 top-6 w-0.5"
-          bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
-          style={{ height: full ? "calc(100% - 1.5rem)" : "2%" }}
-        />
-        <Box
-          className="absolute right-0 top-6 w-0.5"
-          bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
-          style={{ height: full ? "calc(100% - 1.5rem)" : "2%" }}
-        />
-        {full && (
-          <Box
-            className="absolute inset-x-0 bottom-0 h-0.5"
-            bg={DEFAULT_TERMINAL_PANE_MARKER_FOCUS_COLOR}
-          />
-        )}
-        <Box className="absolute inset-x-2 top-2 h-2 rounded-sm bg-surface-container-high" />
-        <Box className="absolute inset-x-2 bottom-2 top-7 rounded-sm bg-surface-container" />
+      <Box
+        aria-hidden="true"
+        className="grid h-24 grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] overflow-hidden rounded-lg border font-mono text-[9px] leading-[1.45]"
+        style={{
+          borderColor: previewBorder,
+          backgroundColor: "var(--terminal-theme-background, #0c0e10)",
+          color: "var(--terminal-theme-foreground, #f8fafc)",
+        }}
+      >
+        <div className="flex min-w-0 flex-col border-r" style={{ borderColor: previewBorder }}>
+          <div
+            className="flex h-6 shrink-0 items-center gap-1.5 border-b px-2"
+            style={{ borderColor: previewBorder, background: previewChrome }}
+          >
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: "var(--terminal-theme-muted, #64748b)" }}
+            />
+            <span className="truncate opacity-75">PowerShell</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden px-2 py-1.5">
+            <div>PS&gt; npm run dev</div>
+            <div className="mt-1" style={{ color: "var(--terminal-theme-accent, #60a5fa)" }}>VITE v7.0.0</div>
+            <div className="truncate opacity-55">localhost:5173</div>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col">
+          <div
+            className="flex h-6 shrink-0 items-center gap-1.5 border-b px-2"
+            style={{ borderColor: previewBorder, background: previewChrome }}
+          >
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: "var(--terminal-theme-accent, #60a5fa)" }}
+            />
+            <span className="truncate">Codex</span>
+          </div>
+          <div className="relative min-h-0 flex-1 overflow-hidden px-2 py-1.5">
+            <div>&gt; git diff --stat</div>
+            <div className="mt-1 truncate opacity-65">src/App.tsx</div>
+            <div style={{ color: "var(--terminal-theme-accent, #60a5fa)" }}>3 files +24 -7</div>
+            <div
+              className="ui-terminal-pane-marker"
+              data-marker-style={style}
+              data-marker-status="focus"
+              style={markerStyle}
+            >
+              <span className="ui-terminal-pane-marker__top" />
+              <span className="ui-terminal-pane-marker__right" />
+              <span className="ui-terminal-pane-marker__bottom" />
+              <span className="ui-terminal-pane-marker__left" />
+            </div>
+          </div>
+        </div>
       </Box>
-      <Text mt={8} size="xs" ta="center" fw={selected ? 600 : 400}>
-        {label}
-      </Text>
+      <Group mt={8} justify="center" gap={5} wrap="nowrap">
+        {selected && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
+        <Text size="xs" ta="center" fw={selected ? 600 : 400} c={selected ? "var(--primary)" : undefined}>
+          {label}
+        </Text>
+      </Group>
     </UnstyledButton>
   );
 }
@@ -280,6 +337,9 @@ export function ThemeSettingsPage() {
   const [query, setQuery] = useState("");
   const [fontSizeDraft, setFontSizeDraft] = useState(fontSize);
   const [terminalScrollbackRowsDraft, setTerminalScrollbackRowsDraft] = useState(terminalScrollbackRows);
+  const [paneMarkerPreviewColorKey, setPaneMarkerPreviewColorKey] =
+    useState<PaneMarkerPreviewColorKey>("doneColor");
+  const paneMarkerPreviewColor = terminalPaneMarker[paneMarkerPreviewColorKey];
   const displayedTerminalScrollbackRows = terminalScrollbackCustomEnabled
     ? terminalScrollbackRowsDraft
     : TERMINAL_SCROLLBACK_ROWS_DEFAULT;
@@ -1156,6 +1216,7 @@ export function ThemeSettingsPage() {
                       key={style}
                       style={style}
                       label={t(labelKey)}
+                      markerColor={paneMarkerPreviewColor}
                       selected={terminalPaneMarker.style === style}
                       onSelect={() => updatePaneMarker("style", style)}
                     />
@@ -1163,27 +1224,52 @@ export function ThemeSettingsPage() {
                 </SimpleGrid>
 
                 <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                  {([
-                    ["doneColor", "settings.terminal.paneMarker.color.done"],
-                    ["failedColor", "settings.terminal.paneMarker.color.failed"],
-                    ["attentionColor", "settings.terminal.paneMarker.color.attention"],
-                  ] as const).map(([key, labelKey]) => (
-                    <Stack key={key} gap={6}>
-                      <Text size="xs" c="var(--on-surface-variant)">{t(labelKey)}</Text>
-                      <Group gap="xs" wrap="nowrap">
-                        <TextInput
-                          type="color"
-                          value={terminalPaneMarker[key]}
-                          onChange={(event) => updatePaneMarker(key, event.currentTarget.value.toUpperCase())}
-                          w={52}
-                          size="xs"
-                          aria-label={t(`${labelKey}Aria`)}
-                          styles={{ input: { cursor: "pointer", padding: 4 } }}
-                        />
-                        <Text size="xs" ff="monospace">{terminalPaneMarker[key]}</Text>
-                      </Group>
-                    </Stack>
-                  ))}
+                  {PANE_MARKER_PREVIEW_COLOR_OPTIONS.map(([key, labelKey]) => {
+                    const selected = paneMarkerPreviewColorKey === key;
+                    return (
+                      <Stack
+                        key={key}
+                        gap={6}
+                        className="rounded-lg border p-2 transition-colors"
+                        style={{
+                          borderColor: selected ? "var(--primary)" : "var(--border)",
+                          background: selected
+                            ? "color-mix(in srgb, var(--primary) 8%, var(--surface-container-low))"
+                            : "transparent",
+                        }}
+                      >
+                        <UnstyledButton
+                          type="button"
+                          className="ui-focus-ring flex w-full items-center justify-between gap-2 rounded-md text-left"
+                          onClick={() => setPaneMarkerPreviewColorKey(key)}
+                          aria-pressed={selected}
+                        >
+                          <Text
+                            size="xs"
+                            fw={selected ? 600 : 400}
+                            c={selected ? "var(--primary)" : "var(--on-surface-variant)"}
+                          >
+                            {t(labelKey)}
+                          </Text>
+                          {selected && <Check size={13} strokeWidth={2.5} aria-hidden="true" />}
+                        </UnstyledButton>
+                        <Group gap="xs" wrap="nowrap">
+                          <TextInput
+                            type="color"
+                            value={terminalPaneMarker[key]}
+                            onPointerDown={() => setPaneMarkerPreviewColorKey(key)}
+                            onFocus={() => setPaneMarkerPreviewColorKey(key)}
+                            onChange={(event) => updatePaneMarker(key, event.currentTarget.value.toUpperCase())}
+                            w={52}
+                            size="xs"
+                            aria-label={t(`${labelKey}Aria`)}
+                            styles={{ input: { cursor: "pointer", padding: 4 } }}
+                          />
+                          <Text size="xs" ff="monospace">{terminalPaneMarker[key]}</Text>
+                        </Group>
+                      </Stack>
+                    );
+                  })}
                 </SimpleGrid>
               </Stack>
             </fieldset>
