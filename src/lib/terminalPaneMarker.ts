@@ -19,7 +19,7 @@ export interface TerminalPaneMarkerPresentation {
 
 export const DEFAULT_TERMINAL_PANE_MARKER_SETTINGS: TerminalPaneMarkerSettings = {
   style: "tab-frame",
-  doneColor: "#8FBF7F",
+  doneColor: "#51A0CC",
   failedColor: "#F7768E",
   attentionColor: "#FF9E64",
 };

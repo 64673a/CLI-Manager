@@ -35,7 +35,7 @@ const resolve = (overrides = {}) => resolveTerminalPaneMarker({
 test("missing settings migrate to enabled defaults", () => {
   assert.deepEqual(sanitizeTerminalPaneMarkerSettings(undefined), {
     style: "tab-frame",
-    doneColor: "#8FBF7F",
+    doneColor: "#51A0CC",
     failedColor: "#F7768E",
     attentionColor: "#FF9E64",
   });
@@ -82,14 +82,14 @@ test("app blur removes focus emphasis but keeps background Hook states", () => {
   assert.equal(resolve({ isAppFocused: false }), null);
   assert.deepEqual(resolve({ isAppFocused: false, hookStatus: "done" }), {
     status: "done",
-    color: "#8FBF7F",
+    color: "#51A0CC",
     width: 1,
     opacity: 0.5,
   });
 });
 
 test("done, failed and attention override focused Pane accent", () => {
-  assert.equal(resolve({ hookStatus: "done" }).color, "#8FBF7F");
+  assert.equal(resolve({ hookStatus: "done" }).color, "#51A0CC");
   assert.equal(resolve({ hookStatus: "failed" }).color, "#F7768E");
   assert.equal(resolve({ hookStatus: "attention" }).color, "#FF9E64");
   assert.equal(resolve({ hookStatus: "attention" }).width, 2);
@@ -107,7 +107,7 @@ test("only the visible Workspan active Tab participates", () => {
     hookStatus: "done",
   }), {
     status: "done",
-    color: "#8FBF7F",
+    color: "#51A0CC",
     width: 1,
     opacity: 0.5,
   });

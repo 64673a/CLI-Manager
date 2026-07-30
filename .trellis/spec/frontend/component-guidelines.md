@@ -1148,6 +1148,7 @@ interface TerminalPaneMarkerSettings {
 **Validation matrix**:
 
 - Missing settings object -> use the complete default object and enable marker behavior.
+- Default done color -> `#51A0CC`; failed and attention keep their independent defaults.
 - Invalid style -> fall back only `style` to `tab-frame`.
 - Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.
 - Valid lower-case hex -> normalize it to upper case.
