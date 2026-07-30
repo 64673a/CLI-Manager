@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 61
+- **Total Sessions**: 62
 - **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~106 | Active |
+| `journal-2.md` | ~140 | Active |
 | `journal-1.md` | ~2014 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-07-30 | 终端 Pane 状态标记与内容区边界修复 | `04055b45`, `fe9e214c` | `master` |
 | 61 | 2026-07-30 | Hook 任务栏提醒与安装状态检测修复 | `51566bdb` | `master` |
 | 60 | 2026-07-30 | 修复 Pi 输入法编辑器锚点 | `c6eed21e` | `master` |
 | 59 | 2026-07-30 | 修复 Pi 终端兼容与本地历史恢复 | `68c2a0d1` | `master` |

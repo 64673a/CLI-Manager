@@ -104,3 +104,37 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: 终端 Pane 状态标记与内容区边界修复
+
+**Date**: 2026-07-30
+**Task**: 终端 Pane 状态标记与内容区边界修复
+**Branch**: `master`
+
+### Summary
+
+新增 Pane 焦点与 Hook 状态线条标记，并修复标记错误包围 Tab 栏的问题：覆盖层改为挂载在终端内容容器，设置预览、测试、组件规范、功能清单和变更日志同步更新。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `04055b45` | (see git log) |
+| `fe9e214c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
