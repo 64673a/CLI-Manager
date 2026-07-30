@@ -137,3 +137,36 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: 统一终端粘贴图片存储目录
+
+**Date**: 2026-07-30
+**Task**: 统一终端粘贴图片存储目录
+**Branch**: `master`
+
+### Summary
+
+将终端剪贴板图片统一保存到用户数据目录 .cli-manager/attachments，保留大小限制、文件名去重与两天清理策略，并更新 V1.3.3 变更记录和后端持久化契约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b977c45` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
