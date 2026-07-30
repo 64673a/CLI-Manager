@@ -1155,3 +1155,36 @@ Claude 启动阶段提前订阅子任务 transcript，Codex rollout 增加有界
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: 终端状态标记设置预览
+
+**Date**: 2026-07-31
+**Task**: 终端状态标记设置预览
+**Branch**: `feat/terminal-status-marker-settings`
+
+### Summary
+
+优化终端状态标记设置 Demo，修复边框展示，并增加完成、错误、审批颜色选项与双 Demo 实时联动。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e73f3a7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
