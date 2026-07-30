@@ -91,7 +91,7 @@
 }
 
 #command-template-panel code.text-primary {
-  color: color-mix(in srgb, var(--primary) 58%, var(--terminal-popover-muted) 42%);
+  color: var(--terminal-popover-muted);
 }
 
 #command-template-panel .text-on-surface-variant,
@@ -125,7 +125,7 @@
 }
 
 #command-template-panel {
-  --primary: var(--term-panel-accent, var(--terminal-theme-accent, #5b8def));
+  --primary: var(--terminal-popover-fg);
   --interactive-focus-ring: color-mix(in srgb, var(--primary) 18%, transparent);
   color: var(--terminal-popover-fg);
 }
@@ -263,9 +263,9 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  color: var(--primary);
+  color: var(--terminal-popover-muted);
   border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
-  background-color: color-mix(in srgb, var(--surface-container-highest) 86%, var(--primary) 14%);
+  background-color: var(--surface-container-highest);
 }
 
 .command-template-panel__title-icon {
@@ -311,6 +311,12 @@
 .command-template-panel__new-button:hover {
   border-color: color-mix(in srgb, var(--primary) 34%, var(--border) 66%);
   background-color: color-mix(in srgb, var(--surface-container-highest) 86%, var(--primary) 14%);
+}
+
+#command-template-panel .ui-primary-action {
+  background-image: none;
+  background-color: var(--surface-container-highest);
+  color: var(--terminal-popover-fg);
 }
 
 .command-template-panel__filters {
@@ -387,9 +393,9 @@
 }
 
 .command-template-panel__scope-tabs button[data-active="true"] {
-  border-color: color-mix(in srgb, var(--primary) 22%, var(--border) 78%);
-  color: color-mix(in srgb, var(--primary) 82%, var(--terminal-popover-fg) 18%);
-  background-color: color-mix(in srgb, var(--surface-container-highest) 88%, var(--primary) 12%);
+  border-color: color-mix(in srgb, var(--border) 78%, var(--terminal-popover-fg) 22%);
+  color: var(--terminal-popover-fg);
+  background-color: var(--surface-container-highest);
   box-shadow: none;
 }
 
@@ -432,7 +438,7 @@
 
 .command-template-panel__row:hover,
 .command-template-panel__row:focus-visible {
-  background-color: color-mix(in srgb, var(--surface-container-highest) 80%, var(--primary) 20%);
+  background-color: var(--surface-container-highest);
 }
 
 .command-template-panel__row-icon {
