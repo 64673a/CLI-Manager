@@ -409,6 +409,14 @@
   padding: 6px;
 }
 
+.command-template-panel__skeleton {
+  background-color: color-mix(
+    in srgb,
+    var(--term-panel-card-inner, #181818) 82%,
+    var(--terminal-popover-fg) 18%
+  );
+}
+
 .command-template-panel__row {
   display: flex;
   align-items: center;
