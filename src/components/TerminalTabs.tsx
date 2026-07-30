@@ -1951,26 +1951,25 @@ function PaneLeafView({
           enabled={isLayoutVisible}
           activeDropPreview={activeDropPreview}
         />
+        {paneMarker && (
+          <div
+            className="ui-terminal-pane-marker"
+            data-marker-style={paneMarkerStyle}
+            data-marker-status={paneMarker.status}
+            style={{
+              "--terminal-pane-marker-color": paneMarker.color,
+              "--terminal-pane-marker-width": `${paneMarker.width}px`,
+              "--terminal-pane-marker-opacity": paneMarker.opacity,
+            } as CSSProperties}
+            aria-hidden="true"
+          >
+            <span className="ui-terminal-pane-marker__top" />
+            <span className="ui-terminal-pane-marker__right" />
+            <span className="ui-terminal-pane-marker__bottom" />
+            <span className="ui-terminal-pane-marker__left" />
+          </div>
+        )}
       </div>
-      {paneMarker && (
-        <div
-          className="ui-terminal-pane-marker"
-          data-marker-style={paneMarkerStyle}
-          data-marker-status={paneMarker.status}
-          style={{
-            "--terminal-pane-marker-color": paneMarker.color,
-            "--terminal-pane-marker-width": `${paneMarker.width}px`,
-            "--terminal-pane-marker-opacity": paneMarker.opacity,
-          } as CSSProperties}
-          aria-hidden="true"
-        >
-          <span className="ui-terminal-pane-marker__top" />
-          <span className="ui-terminal-pane-marker__right" />
-          <span className="ui-terminal-pane-marker__bottom" />
-          <span className="ui-terminal-pane-marker__left" />
-          <span className="ui-terminal-pane-marker__tab-bottom" />
-        </div>
-      )}
     </div>
   );
 }

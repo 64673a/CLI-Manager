@@ -1131,7 +1131,7 @@ const option = {
 - Hidden Workspans and fullscreen-excluded or filtered-out Pane layouts render no marker. Existing Workspan summary dots remain authoritative for hidden layouts.
 - Window blur, document hiding, minimize, and tray transitions remove focus emphasis but preserve background Hook markers.
 - PTY, file-editor, and subagent-transcript Pane kinds receive focus emphasis. Only the main PTY session receives Hook status colors.
-- `tab-frame` draws at the actual 40 px Pane Tab-bar boundary and degrades to `tab-top` when the Tab bar is hidden.
+- Marker overlays must be children of `.ui-terminal-pane-content`, so every style starts at the terminal content boundary and never wraps the Pane Tab bar. `tab-frame` degrades to `tab-top` when the Tab bar is hidden.
 - Settings sanitize the style and each `#RRGGBB` color independently, default to enabled behavior, persist through `settingsStore`, and participate in preference sync.
 
 ```typescript
@@ -1156,7 +1156,7 @@ interface TerminalPaneMarkerSettings {
 
 - Good: a focused Pane with `attention` uses the approval color at 2 px/full opacity.
 - Base: an unfocused Pane with Hook `running` has no marker; if the app is focused, only the active Pane keeps the accent line.
-- Bad: reading merged `tabNotifications` for marker status, because ordinary Shell completion could then look like an Agent Hook result.
+- Bad: mounting the overlay under `.ui-terminal-pane`, because `inset: 0` then includes the Pane Tab bar; reading merged `tabNotifications` is also invalid because ordinary Shell completion could look like an Agent Hook result.
 
 ```tsx
 // Wrong: changes layout and consumes merged Shell/Hook state.

@@ -4157,8 +4157,7 @@
 }
 
 .ui-terminal-pane-marker__top,
-.ui-terminal-pane-marker__bottom,
-.ui-terminal-pane-marker__tab-bottom {
+.ui-terminal-pane-marker__bottom {
   right: 0;
   left: 0;
   height: var(--terminal-pane-marker-width);
@@ -4188,19 +4187,13 @@
   display: none !important;
 }
 
-.ui-terminal-pane-marker__tab-bottom {
-  top: 2.5rem;
-  display: none !important;
-}
-
 .ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__right,
 .ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__left {
   bottom: 0;
   height: auto;
 }
 
-.ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__bottom,
-.ui-terminal-pane-marker[data-marker-style="tab-frame"] .ui-terminal-pane-marker__tab-bottom {
+.ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__bottom {
   display: block !important;
 }
 

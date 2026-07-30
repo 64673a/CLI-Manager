@@ -46,6 +46,15 @@ test("Pane marker settings participate in preference sync", () => {
   assert.match(syncSettings, /terminalPaneMarker:\s*"preferences"/);
 });
 
+test("Pane marker overlay is anchored inside terminal content instead of the Tab bar", () => {
+  const terminalTabs = readFileSync(new URL("../src/components/TerminalTabs.tsx", import.meta.url), "utf8");
+  assert.match(
+    terminalTabs,
+    /className="ui-terminal-pane-content[\s\S]*?<PaneContentDropZones[\s\S]*?className="ui-terminal-pane-marker"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\);/,
+  );
+  assert.doesNotMatch(terminalTabs, /ui-terminal-pane-marker__tab-bottom/);
+});
+
 test("invalid style and colors fall back independently", () => {
   assert.deepEqual(sanitizeTerminalPaneMarkerSettings({
     style: "shadow",
