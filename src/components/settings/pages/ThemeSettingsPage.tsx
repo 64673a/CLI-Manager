@@ -61,6 +61,7 @@ import {
 } from "../../../lib/systemFonts";
 import { FontFamilySelect } from "../FontFamilySelect";
 import { pickByLanguage, useI18n } from "../../../lib/i18n";
+import type { TerminalPaneMarkerSettings, TerminalPaneMarkerStyle } from "../../../lib/terminalPaneMarker";
 
 const SWATCH_KEYS = ["background", "foreground", "red", "green", "blue", "cyan"] as const;
 const TERMINAL_FONT_FALLBACK = "monospace";
@@ -186,6 +187,47 @@ function CollapsibleSettingsSection({
   );
 }
 
+function PaneMarkerStylePreview({
+  style,
+  label,
+  selected,
+  onSelect,
+}: {
+  style: TerminalPaneMarkerStyle;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const full = style === "full";
+  const frame = style === "tab-frame";
+  return (
+    <UnstyledButton
+      type="button"
+      className="ui-focus-ring ui-selection-card rounded-xl border p-3"
+      style={{
+        borderColor: selected ? "var(--primary)" : "var(--border)",
+        background: selected ? "color-mix(in srgb, var(--primary) 8%, transparent)" : "transparent",
+      }}
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={label}
+    >
+      <Box className="relative h-14 overflow-hidden rounded-md bg-surface-container-lowest">
+        <Box className="absolute inset-x-0 top-0 h-0.5 bg-primary" />
+        <Box className="absolute left-0 top-0 w-0.5 bg-primary" style={{ height: full ? "100%" : "10%" }} />
+        <Box className="absolute right-0 top-0 w-0.5 bg-primary" style={{ height: full ? "100%" : "10%" }} />
+        {full && <Box className="absolute inset-x-0 bottom-0 h-0.5 bg-primary" />}
+        {frame && <Box className="absolute inset-x-0 top-5 h-0.5 bg-primary" />}
+        <Box className="absolute inset-x-2 top-2 h-2 rounded-sm bg-surface-container-high" />
+        <Box className="absolute inset-x-2 bottom-2 top-7 rounded-sm bg-surface-container" />
+      </Box>
+      <Text mt={8} size="xs" ta="center" fw={selected ? 600 : 400}>
+        {label}
+      </Text>
+    </UnstyledButton>
+  );
+}
+
 export function ThemeSettingsPage() {
   const { language, t } = useI18n();
   const text = (zh: string, en: string) => pickByLanguage(language, zh, en);
@@ -217,6 +259,7 @@ export function ThemeSettingsPage() {
   const setWorkspanModeEnabled = useTerminalStore((s) => s.setWorkspanModeEnabled);
   const terminalShellProfiles = useSettingsStore((s) => s.terminalShellProfiles);
   const terminalSettingsSectionsExpanded = useSettingsStore((s) => s.terminalSettingsSectionsExpanded);
+  const terminalPaneMarker = useSettingsStore((s) => s.terminalPaneMarker);
   const update = useSettingsStore((s) => s.update);
   const setTerminalThemeMode = useSettingsStore((s) => s.setTerminalThemeMode);
   const [query, setQuery] = useState("");
@@ -237,6 +280,10 @@ export function ThemeSettingsPage() {
   const toggleSection = (key: TerminalSettingsSectionKey) => {
     const nextExpanded = { ...terminalSettingsSectionsExpanded, [key]: !terminalSettingsSectionsExpanded[key] };
     void update("terminalSettingsSectionsExpanded", nextExpanded);
+  };
+
+  const updatePaneMarker = <K extends keyof TerminalPaneMarkerSettings>(key: K, value: TerminalPaneMarkerSettings[K]) => {
+    void update("terminalPaneMarker", { ...terminalPaneMarker, [key]: value });
   };
 
   const scanTerminalShellProfiles = async (platform = osPlatform) => {
@@ -1049,6 +1096,59 @@ export function ThemeSettingsPage() {
                 />
               </Group>
             </Card>
+          </Stack>
+        </CollapsibleSettingsSection>
+
+        <CollapsibleSettingsSection
+          title={t("settings.terminal.paneMarker.title")}
+          description={t("settings.terminal.paneMarker.description")}
+          open={terminalSettingsSectionsExpanded.paneMarker}
+          onToggle={() => toggleSection("paneMarker")}
+        >
+          <Stack gap="md">
+            <SimpleGrid
+              cols={{ base: 1, sm: 3 }}
+              role="group"
+              aria-label={t("settings.terminal.paneMarker.styleAria")}
+            >
+              {([
+                ["full", "settings.terminal.paneMarker.style.full"],
+                ["tab-top", "settings.terminal.paneMarker.style.tabTop"],
+                ["tab-frame", "settings.terminal.paneMarker.style.tabFrame"],
+              ] as const).map(([style, labelKey]) => (
+                <PaneMarkerStylePreview
+                  key={style}
+                  style={style}
+                  label={t(labelKey)}
+                  selected={terminalPaneMarker.style === style}
+                  onSelect={() => updatePaneMarker("style", style)}
+                />
+              ))}
+            </SimpleGrid>
+
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              {([
+                ["doneColor", "settings.terminal.paneMarker.color.done"],
+                ["failedColor", "settings.terminal.paneMarker.color.failed"],
+                ["attentionColor", "settings.terminal.paneMarker.color.attention"],
+              ] as const).map(([key, labelKey]) => (
+                <Stack key={key} gap={6}>
+                  <Text size="xs" c="var(--on-surface-variant)">{t(labelKey)}</Text>
+                  <Group gap="xs" wrap="nowrap">
+                    <TextInput
+                      type="color"
+                      value={terminalPaneMarker[key]}
+                      onChange={(event) => updatePaneMarker(key, event.currentTarget.value.toUpperCase())}
+                      w={52}
+                      size="xs"
+                      aria-label={t(`${labelKey}Aria`)}
+                      styles={{ input: { cursor: "pointer", padding: 4 } }}
+                    />
+                    <Text size="xs" ff="monospace">{terminalPaneMarker[key]}</Text>
+                  </Group>
+                </Stack>
+              ))}
+            </SimpleGrid>
           </Stack>
         </CollapsibleSettingsSection>
 

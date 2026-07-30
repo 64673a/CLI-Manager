@@ -34,6 +34,11 @@ import {
   type CliArgsHistoryEntry,
 } from "../lib/cliArgsHistory";
 import type { GitDiffContextLines, GitDiffWhitespaceMode } from "../lib/gitDiffOptions";
+import {
+  DEFAULT_TERMINAL_PANE_MARKER_SETTINGS,
+  sanitizeTerminalPaneMarkerSettings,
+  type TerminalPaneMarkerSettings,
+} from "../lib/terminalPaneMarker";
 
 export {
   DESKTOP_PET_SIZE_DEFAULT_PERCENT,
@@ -113,7 +118,7 @@ export type SystemResourceCardKey =
   | "processes";
 export type TerminalPanelWidthKey = "merged" | "stats" | "git" | "replay" | "files" | "systemResources";
 export type TerminalPanelWidthSettings = Record<TerminalPanelWidthKey, number>;
-export type TerminalSettingsSectionKey = "behavior" | "shells" | "themes" | "background";
+export type TerminalSettingsSectionKey = "behavior" | "paneMarker" | "shells" | "themes" | "background";
 export type TerminalSettingsSectionsExpanded = Record<TerminalSettingsSectionKey, boolean>;
 export type HookSettingsSectionKey = "toast" | "notifications" | "claude" | "codex" | "pi" | "grok";
 export type HookSettingsSectionsExpanded = Record<HookSettingsSectionKey, boolean>;
@@ -137,12 +142,14 @@ export const TERMINAL_PANEL_WIDTH_DEFAULTS: TerminalPanelWidthSettings = {
 };
 export const TERMINAL_SETTINGS_SECTION_KEYS: readonly TerminalSettingsSectionKey[] = [
   "behavior",
+  "paneMarker",
   "shells",
   "themes",
   "background",
 ];
 export const TERMINAL_SETTINGS_SECTIONS_EXPANDED_DEFAULT: TerminalSettingsSectionsExpanded = {
   behavior: true,
+  paneMarker: false,
   shells: false,
   themes: false,
   background: false,
@@ -389,6 +396,7 @@ export interface Settings {
   terminalShellProfiles: TerminalShellProfile[];
   /** 终端设置页各可折叠区块的展开状态记忆。 */
   terminalSettingsSectionsExpanded: TerminalSettingsSectionsExpanded;
+  terminalPaneMarker: TerminalPaneMarkerSettings;
   terminalInputSuggestionsEnabled: boolean;
   terminalInputSuggestionProvider: TerminalInputSuggestionProvider;
   terminalInputSuggestionLlmEnabled: boolean;
@@ -567,6 +575,7 @@ const DEFAULTS: Settings = {
   },
   terminalShellProfiles: [],
   terminalSettingsSectionsExpanded: { ...TERMINAL_SETTINGS_SECTIONS_EXPANDED_DEFAULT },
+  terminalPaneMarker: { ...DEFAULT_TERMINAL_PANE_MARKER_SETTINGS },
   terminalInputSuggestionsEnabled: true,
   terminalInputSuggestionProvider: "local",
   terminalInputSuggestionLlmEnabled: false,
@@ -1271,6 +1280,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     entries.terminalSettingsSectionsExpanded = migrateTerminalSettingsSectionsExpanded(
       entries.terminalSettingsSectionsExpanded
     );
+    entries.terminalPaneMarker = sanitizeTerminalPaneMarkerSettings(entries.terminalPaneMarker);
 
     const currentDefaultShell = typeof entries.defaultShell === "string" ? entries.defaultShell.trim() : "";
     entries.defaultShell = currentDefaultShell || DEFAULTS.defaultShell;

@@ -4141,6 +4141,69 @@
   border-radius: 8px;
 }
 
+.ui-terminal-pane-marker {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  color: var(--terminal-pane-marker-color);
+  opacity: var(--terminal-pane-marker-opacity);
+}
+
+.ui-terminal-pane-marker > span {
+  position: absolute;
+  display: block;
+  background: currentColor;
+}
+
+.ui-terminal-pane-marker__top,
+.ui-terminal-pane-marker__bottom,
+.ui-terminal-pane-marker__tab-bottom {
+  right: 0;
+  left: 0;
+  height: var(--terminal-pane-marker-width);
+}
+
+.ui-terminal-pane-marker__top {
+  top: 0;
+}
+
+.ui-terminal-pane-marker__right,
+.ui-terminal-pane-marker__left {
+  top: 0;
+  width: var(--terminal-pane-marker-width);
+  height: 5%;
+}
+
+.ui-terminal-pane-marker__right {
+  right: 0;
+}
+
+.ui-terminal-pane-marker__left {
+  left: 0;
+}
+
+.ui-terminal-pane-marker__bottom {
+  bottom: 0;
+  display: none !important;
+}
+
+.ui-terminal-pane-marker__tab-bottom {
+  top: 2.5rem;
+  display: none !important;
+}
+
+.ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__right,
+.ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__left {
+  bottom: 0;
+  height: auto;
+}
+
+.ui-terminal-pane-marker[data-marker-style="full"] .ui-terminal-pane-marker__bottom,
+.ui-terminal-pane-marker[data-marker-style="tab-frame"] .ui-terminal-pane-marker__tab-bottom {
+  display: block !important;
+}
+
 .ui-terminal-pane-chrome .ui-tab-trigger {
   color: color-mix(in srgb, var(--terminal-theme-foreground, #f8fafc) 72%, var(--terminal-theme-muted, #64748b) 28%);
   border-color: color-mix(in srgb, var(--terminal-tab-border) 34%, transparent);
