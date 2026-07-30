@@ -104,3 +104,36 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: 兼容 Grok TUI 鼠标交互
+
+**Date**: 2026-07-30
+**Task**: 兼容 Grok TUI 鼠标交互
+**Branch**: `master`
+
+### Summary
+
+将 xterm 鼠标协议策略拆分到独立浏览器模块，允许 Grok 等鼠标型 TUI 接收普通点击和拖动；补充回归测试、V1.3.3 Changelog 与前端终端契约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `151a7118` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
