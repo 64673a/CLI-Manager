@@ -204,3 +204,36 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 65: 单 Pane 布局隐藏状态标记
+
+**Date**: 2026-07-30
+**Task**: 单 Pane 布局隐藏状态标记
+**Branch**: `master`
+
+### Summary
+
+Pane 标记增加当前可见分屏判定：单 Pane 即使包含多个 Tab 或 Hook 状态也不显示线条；真正分屏、深层分屏及分屏后的 Pane 全屏继续显示。同步回归测试、组件规范、V1.3.3 变更日志与功能清单。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `396d1c38` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
