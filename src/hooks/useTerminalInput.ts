@@ -44,6 +44,7 @@ import { getTerminalCellWidth, resolveCursorIndexFromCellOffset } from "../lib/t
 import { trimTerminalPasteBoundaryLineBreaks } from "../lib/terminalKeyboard";
 import {
   attachTerminalIme,
+  type TerminalImeAnchorResolver,
   type TerminalImeTextareaAnchorResolver,
 } from "../lib/terminalIme";
 import {
@@ -133,6 +134,7 @@ interface TerminalInputImeOptions {
   osPlatformRef: RefObject<OsPlatform>;
   scheduleFit: (force?: boolean) => void;
   onCompositionCommitted: (textareaValue: string) => void;
+  resolveCompositionAnchor?: TerminalImeAnchorResolver;
   resolveTextareaAnchor?: TerminalImeTextareaAnchorResolver;
 }
 
@@ -794,6 +796,7 @@ export function useTerminalInput({
       osPlatformRef,
       scheduleFit,
       onCompositionCommitted,
+      resolveCompositionAnchor,
       resolveTextareaAnchor,
     }: TerminalInputImeOptions,
   ) => {
@@ -812,6 +815,7 @@ export function useTerminalInput({
       updateSuggestionPosition: () => updateSuggestionGhostPositionRef.current(),
       scheduleFit,
       onCompositionCommitted,
+      resolveCompositionAnchor,
       resolveTextareaAnchor,
     });
   };

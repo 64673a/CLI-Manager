@@ -2,12 +2,29 @@
 
 ## Responsibility Boundaries
 
+- `terminalImeAnchor.ts`：通用终端输入锚点解析；真实 buffer cursor 优先，prompt fallback
+  只在 cursor 已离开输入区域时使用。
+- `terminalIme.ts`：IME DOM 事件、composition 生命周期与调度；闲置 resize 后重新钉住
+  helper textarea，composition 中 resize/reflow 时失效并重建冻结锚点。
 - `TerminalCliContext.ts`：统一解析 session/project CLI 身份。
-- `TerminalPiIme.ts`：限定行扫描并返回最后一条 Pi composer 底边。
+- `TerminalPiIme.ts`：扫描可见 viewport 的成对横线，解析 Pi 输入行和 composer 下边框。
 - `TerminalPiAnsiTransform.ts`：状态化 CSI 解析与精确 SGR 背景替换。
 - `TerminalPiDiagnostics.ts`：开发期有界诊断。
 - `TerminalPiCompatibility.ts`：Pi 激活状态、门面和子模块协调。
 - `XTermTerminal.tsx`：只组合 Pi 输出转换与既有光标转换，透传 IME 策略。
+
+## IME Anchor Contract
+
+- prompt/input 区域内的 `buffer.cursorX/cursorY` 是唯一真实输入位置；状态栏反色 cell 不得
+  覆盖它。
+- composition 期间可冻结锚点抵抗普通 TUI 状态刷新，但 terminal rows/cols 变化后冻结值
+  必须作废，并在 buffer reflow/render 后重算。
+- 非 composition resize 时 xterm 会先把 helper textarea 同步到硬件光标；应用的后注册
+  `Terminal.onResize` 回调必须立即并在下一动画帧使用 `resolveTextareaAnchor` 覆盖该位置。
+- 调用顺序固定为通用兜底锚点、Pi 输入行修正、Pi textarea 下边框修正。
+- `.composition-view` 使用 Pi 编辑器内的真实/软件光标；Pi helper textarea 使用同一编辑器
+  的下边框。硬件光标在区域内时优先，编辑器外反色状态不得参与解析。
+- 非 Pi、无底边、越界底边均保持通用锚点行为。
 - `historyResumeCommand.ts`：本地历史恢复命令与 Pi 专用参数清理。
 - `historyResumeProject.ts`：来源匹配与本地项目选择。
 

@@ -33,7 +33,12 @@ const ansiPath = transpile(
   "../src/terminal/browser/TerminalPiAnsiTransform.ts",
   "TerminalPiAnsiTransform.mjs",
 );
-transpile("../src/terminal/browser/TerminalPiIme.ts", "TerminalPiIme.mjs");
+transpile("../src/lib/terminalTui.ts", "terminalTui.mjs");
+transpile(
+  "../src/terminal/browser/TerminalPiIme.ts",
+  "TerminalPiIme.mjs",
+  { "../../lib/terminalTui": "./terminalTui.mjs" },
+);
 transpile("../src/terminal/browser/TerminalPiDiagnostics.ts", "TerminalPiDiagnostics.mjs");
 const compatibilityPath = transpile(
   "../src/terminal/browser/TerminalPiCompatibility.ts",
@@ -48,7 +53,11 @@ const compatibilityPath = transpile(
 
 const { isPiTerminalContext } = await import(pathToFileURL(contextPath).href);
 const { createPiAnsiTransform, isPiToolBackgroundRgb } = await import(pathToFileURL(ansiPath).href);
-const { createPiTerminalCompatibility, resolvePiImeTextareaAnchor } = await import(
+const {
+  createPiTerminalCompatibility,
+  resolvePiImeCompositionAnchor,
+  resolvePiImeTextareaAnchor,
+} = await import(
   pathToFileURL(compatibilityPath).href
 );
 
@@ -90,39 +99,105 @@ test("diagnostics detect Pi across daemon frames but stay silent when disabled",
   assert.deepEqual(disabledEvents, []);
 });
 
-function terminalWithLines(lines) {
+function terminalWithLines(lines, cursor = { x: 0, y: 0 }, inverseCells = [], viewportY = 0) {
+  const visibleLines = lines.slice(viewportY);
+  const cols = Math.max(1, ...visibleLines.map((line) => line.length), cursor.x + 1);
+  const inverseKeys = new Set(inverseCells.map(({ x, y }) => `${x}:${y + viewportY}`));
   return {
-    rows: lines.length,
+    cols,
+    rows: visibleLines.length,
     buffer: {
       active: {
-        viewportY: 0,
-        getLine: (row) => lines[row] === undefined
-          ? undefined
-          : { translateToString: () => lines[row] },
+        cursorX: cursor.x,
+        cursorY: cursor.y,
+        viewportY,
+        getLine(row) {
+          const text = lines[row];
+          if (text === undefined) return undefined;
+          return {
+            length: cols,
+            translateToString: () => text,
+            getCell(x) {
+              return {
+                isInverse: () => inverseKeys.has(`${x}:${row}`) ? 1 : 0,
+              };
+            },
+          };
+        },
       },
     },
   };
 }
 
-test("Pi IME uses the last composer rule and preserves fallback anchors", () => {
-  const anchor = { x: 3, y: 1 };
-  assert.deepEqual(
-    resolvePiImeTextareaAnchor(terminalWithLines(["", "> 输入", "────", "", "════", ""]), anchor),
-    { x: 3, y: 4 },
-  );
-  assert.deepEqual(
-    resolvePiImeTextareaAnchor(terminalWithLines(["", "> 输入", "", "────"]), anchor),
-    { x: 3, y: 3 },
-  );
-  assert.deepEqual(resolvePiImeTextareaAnchor(terminalWithLines(["", "> 输入", ""]), anchor), anchor);
-  assert.deepEqual(
-    resolvePiImeTextareaAnchor(terminalWithLines(["> 输入", "", "", "", "", "", "", "────"]), { x: 1, y: 0 }),
+test("Pi IME resolves the editor input row before its textarea bottom border", () => {
+  const terminal = terminalWithLines(
+    ["hardware cursor", "────────", "  input", "", "────────", "status"],
     { x: 1, y: 0 },
-    "rules beyond the bounded lookahead stay untouched",
+    [{ x: 7, y: 2 }],
+  );
+  const fallback = { x: 1, y: 0 };
+  const compositionAnchor = resolvePiImeCompositionAnchor(terminal, fallback);
+
+  assert.deepEqual(compositionAnchor, { x: 7, y: 2 });
+  assert.deepEqual(resolvePiImeTextareaAnchor(terminal, compositionAnchor), { x: 7, y: 4 });
+});
+
+test("Pi IME keeps the live cursor when it is inside the editor", () => {
+  const terminal = terminalWithLines(
+    ["output", "────────", "  input", "", "────────", "status"],
+    { x: 4, y: 3 },
+    [{ x: 7, y: 2 }],
   );
 
+  assert.deepEqual(resolvePiImeCompositionAnchor(terminal, { x: 0, y: 0 }), { x: 4, y: 3 });
+});
+
+test("Pi IME ignores a resized status cursor and inverse cells outside paired rules", () => {
+  const terminal = terminalWithLines(
+    ["────────", "old output", "────────", "────────", "  input", "────────", "inverse status"],
+    { x: 30, y: 6 },
+    [{ x: 5, y: 4 }, { x: 1, y: 6 }],
+  );
+  const compositionAnchor = resolvePiImeCompositionAnchor(terminal, { x: 30, y: 6 });
+
+  assert.deepEqual(compositionAnchor, { x: 5, y: 4 });
+  assert.deepEqual(resolvePiImeTextareaAnchor(terminal, compositionAnchor), { x: 5, y: 5 });
+});
+
+test("Pi IME chooses the bottom-most active pair over output separators", () => {
+  const terminal = terminalWithLines(
+    ["────────", "old output", "────────", "────────", " input", "────────", "status"],
+    { x: 3, y: 1 },
+    [{ x: 6, y: 4 }],
+  );
+
+  assert.deepEqual(resolvePiImeCompositionAnchor(terminal, { x: 3, y: 1 }), { x: 6, y: 4 });
+});
+
+test("Pi IME recognizes a scrolling rule inside the visible viewport", () => {
+  const terminal = terminalWithLines(
+    ["scrollback", "scrollback", "── 2 lines above ──", " input", "────────", "status"],
+    { x: 1, y: 1 },
+    [],
+    2,
+  );
+
+  assert.deepEqual(resolvePiImeCompositionAnchor(terminal, { x: 0, y: 3 }), { x: 1, y: 1 });
+  assert.deepEqual(resolvePiImeTextareaAnchor(terminal, { x: 1, y: 1 }), { x: 1, y: 2 });
+});
+
+test("Pi IME preserves fallback anchors without a valid editor", () => {
+  const anchor = { x: 3, y: 1 };
+  assert.deepEqual(
+    resolvePiImeCompositionAnchor(terminalWithLines(["output", "status"], { x: 1, y: 0 }), anchor),
+    anchor,
+  );
+  assert.deepEqual(resolvePiImeTextareaAnchor(terminalWithLines(["output", "status"]), anchor), anchor);
+
   const nonPi = createPiTerminalCompatibility("shell", () => {}, false);
-  assert.deepEqual(nonPi.resolveImeTextareaAnchor(terminalWithLines(["", "> 输入", "────"]), anchor), anchor);
+  const editor = terminalWithLines(["────", " input", "────"], { x: 2, y: 1 });
+  assert.deepEqual(nonPi.resolveImeCompositionAnchor(editor, anchor), anchor);
+  assert.deepEqual(nonPi.resolveImeTextareaAnchor(editor, anchor), anchor);
 });
 
 test("matches all built-in Pi RGB tool backgrounds only", () => {

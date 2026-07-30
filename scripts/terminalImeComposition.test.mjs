@@ -64,3 +64,30 @@ test("a new composition or disposal cancels stale deferred cleanup", () => {
     /if \(compositionEndCleanupTimerId !== null\) window\.clearTimeout\(compositionEndCleanupTimerId\);[\s\S]*?\n  \};\n\};/,
   );
 });
+
+test("terminal resize invalidates the frozen composition anchor", () => {
+  assert.match(
+    source,
+    /const resizeDisposable = terminal\.onResize\(\(\) => \{[\s\S]*?if \(!isComposingRef\.current\) \{[\s\S]*?scheduleHelperTextareaAnchorPin\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?compositionAnchorCell = null;[\s\S]*?scheduleCompositionAnchorFix\(\);[\s\S]*?\}\);/,
+  );
+  assert.match(source, /resizeDisposable\.dispose\(\);/);
+});
+
+test("idle helper textarea uses the CLI-specific anchor before composition starts", () => {
+  const handler = source.match(
+    /const pinHelperTextareaAnchor = \(\) => \{([\s\S]*?)\n  \};/,
+  )?.[1];
+
+  assert.ok(handler, "pinHelperTextareaAnchor handler was not found");
+  assert.match(handler, /const anchor = resolveCompositionAnchorCell\(\);/);
+  assert.match(handler, /const textareaAnchor = resolveTextareaAnchor\?\.\(terminal, anchor\) \?\? anchor;/);
+  assert.match(handler, /textarea\.style\.left = String\(Math\.max\(0, textareaAnchor\.x \* cell\.width\)\) \+ "px";/);
+  assert.match(handler, /textarea\.style\.top = String\(Math\.max\(0, textareaAnchor\.y \* cell\.height\)\) \+ "px";/);
+});
+
+test("composition anchor resolver runs after the generic fallback", () => {
+  assert.match(
+    source,
+    /const fallbackAnchor = resolveTerminalImeCompositionAnchor\(terminal\);[\s\S]*?return resolveCompositionAnchor\?\.\(terminal, fallbackAnchor\) \?\? fallbackAnchor;/,
+  );
+});

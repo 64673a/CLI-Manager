@@ -8,7 +8,10 @@ import {
 } from "./TerminalCliContext";
 import { createPiAnsiTransform } from "./TerminalPiAnsiTransform";
 import { createPiTerminalDiagnostics } from "./TerminalPiDiagnostics";
-import { resolvePiImeTextareaAnchor } from "./TerminalPiIme";
+import {
+  resolvePiImeCompositionAnchor,
+  resolvePiImeTextareaAnchor,
+} from "./TerminalPiIme";
 
 const DETECTION_TAIL_LIMIT = 64;
 const PI_DIAGNOSTIC_MARKER = "PI177-";
@@ -16,6 +19,7 @@ const PI_DIAGNOSTIC_MARKER = "PI177-";
 export interface PiTerminalCompatibility {
   readonly sessionId: string;
   updateContext(context: TerminalCliContext): void;
+  resolveImeCompositionAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
   resolveImeTextareaAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
   transformOutput(text: string): string;
   onFrame(frame: TerminalBinaryFrame, rawText: string, normalizedText: string): void;
@@ -47,6 +51,9 @@ export function createPiTerminalCompatibility(
     updateContext(context) {
       if (isPiTerminalContext(context)) activate();
     },
+    resolveImeCompositionAnchor(terminal, anchor) {
+      return piActive ? resolvePiImeCompositionAnchor(terminal, anchor) : anchor;
+    },
     resolveImeTextareaAnchor(terminal, anchor) {
       return piActive ? resolvePiImeTextareaAnchor(terminal, anchor) : anchor;
     },
@@ -72,4 +79,4 @@ export function createPiTerminalCompatibility(
 }
 
 export { isPiToolBackgroundRgb } from "./TerminalPiAnsiTransform";
-export { resolvePiImeTextareaAnchor } from "./TerminalPiIme";
+export { resolvePiImeCompositionAnchor, resolvePiImeTextareaAnchor } from "./TerminalPiIme";

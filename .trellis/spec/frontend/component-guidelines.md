@@ -1271,7 +1271,7 @@ if (sequence === "\x1b[?25l") {
 
 **Cause**: xterm syncs `.xterm-helper-textarea` to the terminal cursor on cursor moves. This is required for IME composition, but outside composition it can create browser scroll/anchor churn during progress-bar redraws.
 
-**Fix**: In `XTermTerminal`, keep the helper textarea pinned to xterm's offscreen default while not composing, but keep it at least `1x1`; xterm's IME fallback for active-IME punctuation reads textarea diffs after keyCode 229, and some IMEs drop the first character when the helper textarea is `0x0`. During IME composition, anchor `.composition-view` and `.xterm-helper-textarea` to xterm's current `buffer.active.cursorX/cursorY` when that cursor is on an input prompt. If a TUI redraw moves the cursor to a status/progress row during composition, fall back to the nearest visible prompt row instead of blindly trusting that redraw cursor. Prompt recognition must include Codex's `›` prompt in addition to common shell prompts such as `>`, `$`, `#`, and `PS>`. Do not scan only the bottom rows or force a bottom-row fallback: real input can sit above the bottom while the IME candidate window still needs to follow the visible input row. Reapply the frozen composition anchor after xterm render events, because xterm's own `CompositionHelper.updateCompositionElements()` can rewrite `.composition-view` and helper textarea positions from the live buffer cursor. After `compositionend`, pin the helper textarea offscreen again.
+**Fix**: In `XTermTerminal`, keep the helper textarea pinned to xterm's offscreen default while not composing, but keep it at least `1x1`; xterm's IME fallback for active-IME punctuation reads textarea diffs after keyCode 229, and some IMEs drop the first character when the helper textarea is `0x0`. During IME composition, anchor `.composition-view` and `.xterm-helper-textarea` to xterm's current `buffer.active.cursorX/cursorY` when that cursor is inside a recognized input region. That live cursor has priority over inverse-rendered cells: a TUI may use inverse attributes for a model selector or status field, so scanning for an arbitrary inverse cell is not cursor detection. If a TUI redraw moves the cursor to a status/progress row during composition, fall back to the nearest visible prompt row instead of blindly trusting that redraw cursor. Prompt recognition must include Codex's `›` prompt in addition to common shell prompts such as `>`, `$`, `#`, and `PS>`. Do not scan only the bottom rows or force a bottom-row fallback: real input can sit above the bottom while the IME candidate window still needs to follow the visible input row. Reapply the frozen composition anchor after xterm render events, because xterm's own `CompositionHelper.updateCompositionElements()` can rewrite `.composition-view` and helper textarea positions from the live buffer cursor. xterm also calls `_syncTextArea()` from its resize handler before application listeners run. When resize fires outside composition, immediately and on the next animation frame re-pin the idle helper through the CLI-specific `resolveTextareaAnchor`; otherwise the next Windows IME session can start from a TUI status cursor. When resize fires during composition, invalidate the frozen row/column anchor before reapplying it because xterm reflow makes old viewport-relative coordinates invalid. After `compositionend`, pin the helper textarea again.
 
 **Composition-end timing**: xterm intentionally reads the final helper-textarea value from its own `setTimeout(0)` after `compositionend`, because WebKit/Chromium can update the committed candidate after the event listeners return. The application IME listener must defer helper-textarea re-anchoring, scroll restoration, and `scheduleFit(true)` to a later timer registered after xterm's listener. Cancel that deferred cleanup if another composition starts or the controller is disposed. Mutating textarea geometry synchronously in `compositionend` can make WKWebView commit only the final raw pinyin character.
 
@@ -1298,10 +1298,11 @@ textarea.style.display = "none";
 
 - [ ] TUI redraws, with or without Claude Code `/compact`, do not make the input anchor jump.
 - [ ] Chinese/IME composition text and the candidate window stay near the visible input cursor, including when the input row is not at the bottom.
+- [ ] Fullscreen, split, and resize operations re-pin the idle helper before the next composition; inverse status fields do not move composition text, and reflow does not retain stale composition rows.
 - [ ] If a TUI status/progress redraw owns the current cursor during composition, the candidate window falls back to the nearest visible prompt row.
 - [ ] Normal keyboard input, Enter, and paste still reach the PTY.
 - [ ] Chinese/IME composition still positions the candidate window correctly.
-- [ ] `node --test scripts/terminalImeComposition.test.mjs` confirms composition cleanup stays behind xterm's deferred commit and is cancelled for a new composition/disposal.
+- [ ] `node --test scripts/terminalImeAnchor.test.mjs scripts/terminalImeComposition.test.mjs` confirms real-cursor priority, prompt fallback, resize invalidation, composition cleanup ordering, and cancellation for a new composition/disposal.
 
 ### Common Mistake: Estimating xterm IME cell size from container bounds
 
@@ -1466,7 +1467,9 @@ invoke("pty_write", { sessionId, data });
 
 ### Convention: Pi terminal compatibility stays outside XTermTerminal
 
-**What**: Shared CLI context parsing lives in `src/terminal/browser/TerminalCliContext.ts`.
+**What**: Shared IME input-anchor parsing lives in `src/lib/terminalImeAnchor.ts`, while IME DOM events
+and composition lifecycle stay in `src/lib/terminalIme.ts`. Shared CLI context parsing lives in
+`src/terminal/browser/TerminalCliContext.ts`.
 Pi IME positioning, ANSI transformation, and diagnostics live in `TerminalPiIme.ts`,
 `TerminalPiAnsiTransform.ts`, and `TerminalPiDiagnostics.ts`. `TerminalPiCompatibility.ts` is only
 the facade/state coordinator. `XTermTerminal` supplies context and connects narrow callbacks.
@@ -1491,9 +1494,16 @@ background row. `DECSET/DECRST 2026` filtering and viewport refresh do not fix t
 - Diagnostic payloads must be bounded and must not persist complete terminal content.
 - `useTerminalDisplay` exposes only tool-neutral optional callbacks; Pi branching stays out of the
   shared transport and write/ACK path.
-- `attachTerminalIme` may resolve a separate helper-textarea anchor, but `.composition-view` must
-  remain at the actual input cursor. The Pi resolver scans a bounded number of rows and uses the
-  last composer rule; non-Pi sessions, missing rules, and out-of-range rules return the original anchor.
+- `attachTerminalIme` resolves anchors in this order: shared fallback, optional CLI composition
+  correction, then optional helper-textarea correction. `.composition-view` uses the corrected input
+  row; only the helper textarea moves to a composer bottom border.
+- Pi recognizes an editor only between paired horizontal rules in the visible viewport. A rule may
+  contain Pi's scrolling hint between horizontal edges. A live buffer cursor inside that region wins;
+  otherwise only inverse cells inside the same region may act as the software cursor. Inverse status
+  cells outside a paired editor are invalid.
+- Terminal resize/reflow invalidates a frozen composition anchor before both Pi corrections run.
+- Outside composition, terminal resize must reapply the Pi helper-textarea resolver after xterm's own
+  `_syncTextArea()` write; the idle pin uses the same bottom-rule anchor as the active composition path.
 - Pi tool background normalization is a stateful pre-write CSI transform, never an xterm buffer
   mutation. It replaces exact dark/light RGB status backgrounds with `SGR 49`, plus unambiguous
   256-color fallbacks 22/52/255. Conflicting 17/254 values, foreground attributes, user/custom
@@ -1503,6 +1513,7 @@ background row. `DECSET/DECRST 2026` filtering and viewport refresh do not fix t
 
 ```typescript
 interface PiTerminalCompatibility {
+  resolveImeCompositionAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
   resolveImeTextareaAnchor(terminal: Terminal, anchor: TerminalImeAnchor): TerminalImeAnchor;
   transformOutput(text: string): string;
   reset(): void;
@@ -1511,11 +1522,13 @@ interface PiTerminalCompatibility {
 
 **Cases**:
 
-- Good: Pi composer rule exists -> move only the helper textarea to the rule row.
-- Base: non-Pi session or no rule -> return the original anchor without buffer mutation.
+- Good: paired Pi rules plus an in-region hardware/software cursor -> composition uses the input row
+  and only the helper textarea moves to the bottom rule.
+- Base: non-Pi session, unpaired rules, or no in-region cursor -> return the shared fallback without
+  buffer mutation.
 - Bad: touching xterm private `_line/loadCell/setCell` APIs or broadly clearing a rendered row.
 
-**Tests**: Run `node --test scripts/terminalOsc.test.mjs scripts/terminalPiCompatibility.test.mjs`;
+**Tests**: Run `node --test scripts/terminalImeAnchor.test.mjs scripts/terminalImeComposition.test.mjs scripts/terminalOsc.test.mjs scripts/terminalPiCompatibility.test.mjs`;
 assert Pi context detection, bounded summaries, production/non-Pi silence, OSC 10/11 filtering,
 byte-for-byte Pi message preservation at every frame split, separate IME anchors, RGB/256-color
 matching, reset behavior, preserved user/custom backgrounds, and foreground preservation.

@@ -1558,6 +1558,7 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
       forwarding: inputForwarding,
       osPlatformRef,
       scheduleFit,
+      resolveCompositionAnchor: piTerminalCompatibilityRef.current?.resolveImeCompositionAnchor,
       resolveTextareaAnchor: piTerminalCompatibilityRef.current?.resolveImeTextareaAnchor,
       onCompositionCommitted: (textareaValue) => {
         if (!isCodexSession()) return;
