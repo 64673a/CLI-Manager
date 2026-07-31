@@ -1120,6 +1120,61 @@ const option = {
 
 ## Common Mistakes
 
+### Convention: Visible terminal panes use non-layout marker overlays
+
+**What**: The active visible Pane uses a focus color mixed from the current terminal muted and background colors, while the active main-session Tab may override it with persisted Hook done, failed, or attention colors. Render marker lines as an absolute, pointer-transparent overlay; never use layout borders, shadows, animation, or xterm remounting.
+
+**Contracts**:
+
+- Resolve Hook state from the active Tab's Hook source only. Shell lifecycle status must not create Pane status colors.
+- Render markers only when the current visible layout contains more than one Pane. A single Pane with multiple Tabs renders no focus or Hook marker; a fullscreen Pane from an underlying split layout remains eligible.
+- Focused markers use 2 px at full opacity. Background done, failed, or attention markers use 1 px at 50% opacity; background running renders nothing.
+- Hidden Workspans and fullscreen-excluded or filtered-out Pane layouts render no marker. Existing Workspan summary dots remain authoritative for hidden layouts.
+- Window blur, document hiding, minimize, and tray transitions remove focus emphasis but preserve background Hook markers.
+- PTY, file-editor, and subagent-transcript Pane kinds receive focus emphasis. Only the main PTY session receives Hook status colors.
+- Marker overlays must be children of `.ui-terminal-pane-content`, so every style starts at the terminal content boundary and never wraps the Pane Tab bar.
+- The `tab-top` style keeps a full-width top line and limits both side lines to `2%` of the content height. The `full` style keeps full-height sides and a bottom line.
+- The settings style chooser must show a compact two-Pane terminal and mount the production `.ui-terminal-pane-marker` overlay only inside the active Pane content. Do not duplicate marker geometry in preview-only elements. Its Pane content must flex into the space left by the fixed header so the full marker bottom edge is not clipped. The compact preview may override `--terminal-pane-marker-side-height` with a visible pixel length while production keeps the `2%` fallback. Keep the style-card border neutral so it cannot overlap the marker preview; express selection with `aria-pressed`, a subtle primary-tinted background, primary label text, and a visible check. Done, failed, and attention colors must be keyboard-selectable preview options; both style previews use the selected option's live color, and focusing or opening a color input selects its option without persisting preview-only state.
+- Settings sanitize the enabled state, style, and each `#RRGGBB` color independently, default to disabled behavior, persist through `settingsStore`, and participate in preference sync.
+
+```typescript
+type TerminalPaneMarkerStyle = "full" | "tab-top";
+
+interface TerminalPaneMarkerSettings {
+  enabled: boolean;
+  style: TerminalPaneMarkerStyle;
+  doneColor: string;
+  failedColor: string;
+  attentionColor: string;
+}
+```
+
+**Validation matrix**:
+
+- Missing settings object or missing/invalid `enabled` -> use the complete default object and disable marker behavior.
+- Explicit `enabled: true` -> preserve the existing marker behavior; disabling must retain style and color preferences.
+- Visible Pane count <= 1 -> render no marker, regardless of Tab count or Hook status.
+- Default focus color -> mix terminal muted 60% with terminal background 40%; default done color -> `#8FBF7F`; failed and attention keep their independent defaults.
+- Removed legacy `tab-frame` or any invalid style -> fall back only `style` to `tab-top`.
+- Invalid color or a value outside exact `#RRGGBB` syntax -> fall back only that color.
+- Valid lower-case hex -> normalize it to upper case.
+
+**Good/Base/Bad cases**:
+
+- Good: a focused Pane with `attention` uses the approval color at 2 px/full opacity.
+- Base: an unfocused Pane with Hook `running` has no marker; if the app is focused, only the active Pane keeps the default focus line.
+- Bad: mounting the overlay under `.ui-terminal-pane`, because `inset: 0` then includes the Pane Tab bar; reading merged `tabNotifications` is also invalid because ordinary Shell completion could look like an Agent Hook result.
+
+```tsx
+// Wrong: changes layout and consumes merged Shell/Hook state.
+<div style={{ borderColor: statusColor }} data-status={tabNotifications[activeId]} />
+
+// Correct: resolve the active Tab's Hook source, then overlay pointer-transparent lines.
+const marker = resolveTerminalPaneMarker({ hookStatus: tabStatuses[activeId]?.hook ?? "none", ...state });
+```
+
+**Tests**: Run `node scripts/terminalPaneMarker.test.mjs`, `node scripts/terminalWorkspan.test.mjs`, `node scripts/terminalHookBinding.test.mjs`, and `npx tsc --noEmit`. Manually verify all marker styles, hidden Tab bars, nested horizontal/vertical splits, Pane fullscreen, Workspan switching, scoped filtering, window blur/minimize/tray restore, and supported CLI Hook events.
+
 ### Common Mistake: Setting only `borderColor` on Mantine selection cards
 
 **Symptom**: A settings option card looks borderless even though it has Tailwind `border` or a shared class such as `ui-selection-card`.
