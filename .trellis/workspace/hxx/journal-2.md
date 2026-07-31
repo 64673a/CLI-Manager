@@ -468,3 +468,36 @@ Claude、Codex、Pi、Grok 的非强制配置目录解析在已选目录失效�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: 修复终端光标原生显隐
+
+**Date**: 2026-07-31
+**Task**: 修复终端光标原生显隐
+**Branch**: `master`
+
+### Summary
+
+移除通用 DECTCEM 延迟拦截和 Codex 专用光标实验，保留 Claude 背景图下的单格反色软件光标，并补充回归测试与前端规约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5f562763` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

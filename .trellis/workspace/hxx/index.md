@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 72
+- **Total Sessions**: 73
 - **Last Active**: 2026-07-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~470 | Active |
+| `journal-2.md` | ~503 | Active |
 | `journal-1.md` | ~2014 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 73 | 2026-07-31 | 修复终端光标原生显隐 | `5f562763` | `master` |
 | 72 | 2026-07-31 | 增加资源持续上涨诊断日志 | `ce3c9360` | `master` |
 | 71 | 2026-07-31 | 容忍 Hook 配置目录失效 | `0321d7a8` | `master` |
 | 70 | 2026-07-31 | 项目右键菜单增加外部终端入口 | `8e0eefc0` | `master` |
