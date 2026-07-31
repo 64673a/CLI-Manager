@@ -369,3 +369,36 @@ SSH Agent 0.1.7 / protocol 1.10 支持任意普通文件粘贴与拖拽，固定
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: 项目右键菜单增加外部终端入口
+
+**Date**: 2026-07-31
+**Task**: 项目右键菜单增加外部终端入口
+**Branch**: `master`
+
+### Summary
+
+普通项目右键菜单新增显式外部终端入口，复用项目路径、Shell 与 CLI 启动命令，并避免在精简或全局外部终端模式下重复显示；补充回归测试、V1.3.3 Changelog 与功能清单。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8e0eefc0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

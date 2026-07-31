@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 69
+- **Total Sessions**: 70
 - **Last Active**: 2026-07-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~371 | Active |
+| `journal-2.md` | ~397 | Active |
 | `journal-1.md` | ~2014 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 70 | 2026-07-31 | 项目右键菜单增加外部终端入口 | `8e0eefc0` | `master` |
 | 69 | 2026-07-31 | SSH 任意文件粘贴 | `9cfdd10b` | `feat/ssh-agent` |
 | 68 | 2026-07-30 | 统一终端粘贴图片存储目录 | `7b977c45` | `master` |
 | 67 | 2026-07-30 | 兼容 Grok TUI 鼠标交互 | `151a7118` | `master` |
