@@ -71,3 +71,36 @@ Pi 通过可见 viewport 成对横线识别无提示符编辑器，组合文字�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: SSH 任意文件粘贴
+
+**Date**: 2026-07-31
+**Task**: SSH 任意文件粘贴
+**Branch**: `feat/ssh-agent`
+
+### Summary
+
+SSH Agent 0.1.7 / protocol 1.10 支持任意普通文件粘贴与拖拽，固定 20 MiB 上限，保留旧 Agent 图片回退兼容。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9cfdd10b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
