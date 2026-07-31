@@ -304,6 +304,10 @@ impl BridgeLane {
     fn is_request_driven(self) -> bool {
         self != Self::Primary
     }
+
+    fn requires_tool_source(self) -> bool {
+        self == Self::Primary
+    }
 }
 
 fn bridge_slot(host_id: &str, lane: BridgeLane) -> String {
@@ -459,7 +463,7 @@ impl SshAgentBridgeManager {
             || plan.client_instance_id.is_empty()
             || plan.project_id.is_empty()
             || plan.bridge_epoch.is_empty()
-            || (lane != BridgeLane::Git && plan.tool_source.is_empty())
+            || (lane.requires_tool_source() && plan.tool_source.is_empty())
         {
             return None;
         }
@@ -1815,6 +1819,9 @@ mod tests {
         assert!(!BridgeLane::Primary.is_request_driven());
         assert!(BridgeLane::Readonly.is_request_driven());
         assert!(BridgeLane::Git.is_request_driven());
+        assert!(BridgeLane::Primary.requires_tool_source());
+        assert!(!BridgeLane::Readonly.requires_tool_source());
+        assert!(!BridgeLane::Git.requires_tool_source());
         assert!(response_timeout("historySync") > response_timeout("fileList"));
 
         let readonly = readonly_client_instance_id("host-1", "client-1");

@@ -254,6 +254,8 @@ GitFileDiffPayload {
 | Required protocol minor/capability is absent | probe `incompatible` / bridge `ssh_agent_bridge_protocol_incompatible` |
 | Old bridge still owns the Host/client socket | retry `bridge_already_active` until takeover or cancellation |
 | SSH stderr indicates interactive authentication or Host Key action | stop background retry with a stable sanitized code |
+| Primary Hook/history lane has an empty `toolSource` | reject bridge creation; request path returns `ssh_agent_identity_required` |
+| Request-driven Readonly file/attachment or Git lane has an empty `toolSource` | accept it; Agent path, installation, machine, client, project, and bridge identities remain mandatory |
 | Hook batch sequence/latest/ACK mismatch | close bridge without advancing the cursor |
 | Remote continuation identity changes | `history_remote_identity_changed`; preserve the previous catalog rows |
 | Agent reinstall changes only `installationId` while machine/user/source/config-root stay stable | accept the same source instance and update catalog metadata atomically |
@@ -311,6 +313,8 @@ GitFileDiffPayload {
 - Good: the desktop disconnects, events spool under the bound Host/client namespace, and reconnect replays each event at most once before ACK deletion.
 - Good: four Host bridges are connected, a fifth waits without starting SSH, and closing one Host releases a permit for the waiting Host.
 - Good: an SSH project file panel reuses its Host bridge, lists only canonical-root descendants, skips symlinks, and reads bounded UTF-8 text or supported image data URLs.
+- Good: an SSH project with no configured CLI tool opens an isolated Readonly bridge for file browsing and attachment upload while keeping its Agent installation and machine identity checks.
+- Bad: apply the Primary Hook/history `toolSource` gate to every non-Git lane; generic file requests then fail with `ssh_agent_identity_required` before contacting an installed Agent.
 - Good: remote video, byte-size, and raster-pixel checks run before file reads and Base64 conversion; the desktop also prechecks directory metadata to avoid unnecessary RPCs.
 - Bad: relying only on WebView `<img>` sizing after a high-pixel image has already crossed the SSH bridge as Base64.
 - Good: an SSH terminal stats panel with a Hook session id and transcript ref reads only that bounded JSONL through the Agent, while stale/offline failures preserve the last bounded snapshot without local path fallback or full history discovery.
@@ -362,7 +366,7 @@ GitFileDiffPayload {
 - Assert Desktop `historyGet` payload encoding maps a missing transcript ref to the JSON string `""`, preserves a non-empty direct ref unchanged, and never emits JSON `null` for the Agent `String` field.
 - Assert remote-history complete-index reuse, force/scope/partial refresh routing, recent-first discovery, unchanged no-write behavior, shared-request consumer lifetime, main-metadata busy mapping, idempotent update, and rollback.
 - Assert protocol minor 4 resume capability and protocol minor 5 remote-file capability, structured Claude/Codex args, source/cwd validation, ownership claim/release, and implicit SSH Config username handling.
-- Assert remote file root/path confinement, symlink escape rejection, binary refusal, 1 MiB text and 5 MiB image limits, the exact 12,000,000-pixel boundary, video refusal, directory/search/visited limits, image data URLs, request-driven read-only scheduling, primary Hook-poll exclusion, loaded-directory reuse, consumer release, and UI/store read-only routing.
+- Assert remote file root/path confinement, symlink escape rejection, binary refusal, 1 MiB text and 5 MiB image limits, the exact 12,000,000-pixel boundary, video refusal, directory/search/visited limits, image data URLs, request-driven read-only scheduling, Primary-only `toolSource` enforcement, empty-source Readonly/Git admission, primary Hook-poll exclusion, loaded-directory reuse, consumer release, and UI/store read-only routing.
 - Assert protocol minor 7 and `gitFull`, dedicated Git-lane serialization and identity isolation, exact launch-root binding, strict per-RPC payloads, full Git mutation/network operations, write timeout/no-retry result-unknown handling, path/branch/patch validation, untracked symlink rejection, and SSH-pending fail-closed transport selection.
 - Assert protocol minor 8 and `gitDiffOptions`, legacy `exact+3` payload compatibility, pre-serialization capability rejection, all three whitespace flags, 3/10/20 context values, invalid-option rejection, and non-exact partial-revert disablement.
 - Assert protocol minor 9 and `fileAttach`, image extension allowlisting, XDG cache/session confinement, chunk size and offset validation, size/pixel/SHA-256 verification, atomic commit, abort/drop cleanup, 48-hour expiry, old-Agent capability rejection, and local-versus-SSH paste routing.
@@ -394,6 +398,20 @@ transport.build_one_shot_launch(agent_probe_script, SshOneShotOptions::default()
 ```
 
 The shared transport owns authentication and routing; the caller owns whether the process is an interactive PTY or a bounded one-shot operation.
+
+### Wrong: require CLI source identity on every non-Git bridge
+
+```rust
+lane != BridgeLane::Git && plan.tool_source.is_empty()
+```
+
+### Correct: require CLI source identity only for the Primary Hook/history lane
+
+```rust
+lane.requires_tool_source() && plan.tool_source.is_empty()
+```
+
+Readonly file/attachment and Git lanes are request-driven Agent capabilities. They retain the full Agent installation and machine identity gate without inventing a CLI source.
 
 ### Wrong: map an absent Agent string field to JSON null
 
