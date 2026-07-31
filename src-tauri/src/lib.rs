@@ -19,6 +19,7 @@ mod linux_graphics;
 mod log_rotation;
 mod process_job;
 pub mod pty;
+mod runtime_diagnostics;
 mod shell_resolver;
 mod ssh_agent_supply_chain;
 pub mod ssh_askpass;
@@ -793,6 +794,7 @@ pub fn run() {
             conpty_sideload::initialize(app.handle());
             // 保留应用自身调试日志，但压掉 sqlx 的逐条 SQL 输出。
             log::set_max_level(log_level);
+            runtime_diagnostics::start(debug_logs);
             // PtyHost 是唯一生产终端路径。后台线程发现/拉起 daemon，成功后写入 bridge；
             // 失败只记日志并让终端创建明确失败，不恢复已删除的进程内 PTY 路径。
             {
@@ -969,6 +971,7 @@ pub fn run() {
             commands::ssh_config::ssh_config_import_preview,
             commands::third_party_notification::third_party_notification_test_send,
             commands::logging::set_debug_logging,
+            commands::logging::resource_diagnostics_write,
             commands::fs::clipboard_read_file_paths,
             commands::fs::check_paths_exist,
             commands::fs::file_get_path_kind,

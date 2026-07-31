@@ -56,6 +56,7 @@ import { ALL_TERMINALS_SCOPE } from "./lib/terminalScope";
 import { cleanupTerminalProcessesForExit } from "./lib/terminalExitCleanup";
 import { shouldIncludeDaemonExitTask } from "./lib/terminalExitTask";
 import { requestSidebarToggle } from "./lib/sidebarCommands";
+import { startRuntimeDiagnostics } from "./lib/runtimeDiagnostics";
 import { getTerminalTheme, isLightTerminalTheme } from "./lib/terminalThemes";
 import { resolveProjectForSession } from "./lib/terminalProject";
 import { terminalProcessManager } from "./terminal/core/TerminalProcessManager";
@@ -646,6 +647,11 @@ function App() {
     };
     window.addEventListener("keydown", handleF12, true);
     return () => window.removeEventListener("keydown", handleF12, true);
+  }, [debugMode]);
+
+  useEffect(() => {
+    if (!IN_TAURI || !debugMode) return;
+    return startRuntimeDiagnostics();
   }, [debugMode]);
 
   // 关闭期自动备份：先落本地 outbox，再在 8s 内尝试上传；超时后下次启动重试。
