@@ -262,6 +262,14 @@ impl BridgeLane {
             "fileList"
                 | "fileRead"
                 | "fileSearch"
+                | "fileAttachBegin"
+                | "fileAttachChunk"
+                | "fileAttachFinish"
+                | "fileAttachAbort"
+                | "fileAttachAnyBegin"
+                | "fileAttachAnyChunk"
+                | "fileAttachAnyFinish"
+                | "fileAttachAnyAbort"
                 | "gitListRepositories"
                 | "gitChanges"
                 | "gitDiff"
@@ -299,6 +307,10 @@ impl BridgeLane {
 
     fn is_request_driven(self) -> bool {
         self != Self::Primary
+    }
+
+    fn requires_tool_source(self) -> bool {
+        self == Self::Primary
     }
 }
 
@@ -455,7 +467,7 @@ impl SshAgentBridgeManager {
             || plan.client_instance_id.is_empty()
             || plan.project_id.is_empty()
             || plan.bridge_epoch.is_empty()
-            || (lane != BridgeLane::Git && plan.tool_source.is_empty())
+            || (lane.requires_tool_source() && plan.tool_source.is_empty())
         {
             return None;
         }
@@ -562,6 +574,14 @@ impl SshAgentBridgeManager {
                     | "fileList"
                     | "fileRead"
                     | "fileSearch"
+                    | "fileAttachBegin"
+                    | "fileAttachChunk"
+                    | "fileAttachFinish"
+                    | "fileAttachAbort"
+                    | "fileAttachAnyBegin"
+                    | "fileAttachAnyChunk"
+                    | "fileAttachAnyFinish"
+                    | "fileAttachAnyAbort"
                     | "gitListRepositories"
                     | "gitChanges"
                     | "gitDiff"
@@ -739,6 +759,13 @@ fn bridge_failure_should_fail_pending(error: &str) -> bool {
 fn required_capability(kind: &str) -> Option<&'static str> {
     match kind {
         "gitDiffWithOptions" => Some("gitDiffOptions"),
+        "fileAttachBegin" | "fileAttachChunk" | "fileAttachFinish" | "fileAttachAbort" => {
+            Some("fileAttach")
+        }
+        "fileAttachAnyBegin"
+        | "fileAttachAnyChunk"
+        | "fileAttachAnyFinish"
+        | "fileAttachAnyAbort" => Some("fileAttachAny"),
         _ => None,
     }
 }
@@ -1530,9 +1557,10 @@ mod tests {
         bridge_failure_should_fail_pending, bridge_slot, checked_response, classify_bridge_stderr,
         fail_pending_requests, handle_agent_request, permanent_bridge_error, read_preamble,
         readonly_client_instance_id, receive_agent_response, receive_frame, request,
-        request_error_requires_disconnect, response_timeout, retry_delay, validate_hook_batch,
-        AgentBridgeRequest, BridgeControl, BridgeEntry, BridgeLane, ClientFrame, CounterPermit,
-        EventDedup, PermitPool, ReaderMessage, ServerFrame, SshAgentBridgeManager, DEDUP_EVENT_IDS,
+        request_error_requires_disconnect, required_capability, response_timeout, retry_delay,
+        validate_hook_batch, AgentBridgeRequest, BridgeControl, BridgeEntry, BridgeLane,
+        ClientFrame, CounterPermit, EventDedup, PermitPool, ReaderMessage, ServerFrame,
+        SshAgentBridgeManager, DEDUP_EVENT_IDS,
     };
     use serde_json::json;
     use std::collections::{HashMap, HashSet};
@@ -1568,6 +1596,43 @@ mod tests {
             response_receiver.recv().unwrap().unwrap_err(),
             "ssh_agent_capability_missing:gitDiffOptions"
         );
+    }
+
+    #[test]
+    fn missing_attachment_capabilities_are_rejected_before_request_write() {
+        for (kind, expected_error) in [
+            ("fileAttachBegin", "ssh_agent_capability_missing:fileAttach"),
+            (
+                "fileAttachAnyBegin",
+                "ssh_agent_capability_missing:fileAttachAny",
+            ),
+        ] {
+            let (_reader_sender, reader_receiver) = mpsc::sync_channel(1);
+            let (response_sender, response_receiver) = mpsc::sync_channel(1);
+            let mut writer = Vec::new();
+            let mut request_number = 9;
+
+            handle_agent_request(
+                &mut writer,
+                &reader_receiver,
+                "host-1",
+                &mut request_number,
+                &[],
+                AgentBridgeRequest {
+                    kind: kind.to_string(),
+                    payload: json!({}),
+                    response: response_sender,
+                },
+            )
+            .unwrap();
+
+            assert!(writer.is_empty());
+            assert_eq!(request_number, 9);
+            assert_eq!(
+                response_receiver.recv().unwrap().unwrap_err(),
+                expected_error
+            );
+        }
     }
 
     #[test]
@@ -1765,10 +1830,22 @@ mod tests {
     fn readonly_requests_use_an_isolated_bridge_identity() {
         assert_eq!(BridgeLane::for_request("historySync"), BridgeLane::Primary);
         assert_eq!(BridgeLane::for_request("fileList"), BridgeLane::Readonly);
+        assert_eq!(
+            BridgeLane::for_request("fileAttachChunk"),
+            BridgeLane::Readonly
+        );
         assert_eq!(BridgeLane::for_request("gitChanges"), BridgeLane::Git);
+        assert_eq!(required_capability("fileAttachBegin"), Some("fileAttach"));
+        assert_eq!(
+            required_capability("fileAttachAnyBegin"),
+            Some("fileAttachAny")
+        );
         assert!(!BridgeLane::Primary.is_request_driven());
         assert!(BridgeLane::Readonly.is_request_driven());
         assert!(BridgeLane::Git.is_request_driven());
+        assert!(BridgeLane::Primary.requires_tool_source());
+        assert!(!BridgeLane::Readonly.requires_tool_source());
+        assert!(!BridgeLane::Git.requires_tool_source());
         assert!(response_timeout("historySync") > response_timeout("fileList"));
 
         let readonly = readonly_client_instance_id("host-1", "client-1");

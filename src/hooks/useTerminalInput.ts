@@ -58,11 +58,14 @@ import {
 } from "../lib/terminalTextEditing";
 import { TUI_BORDER_CHAR_PATTERN, TUI_COMPOSER_PROMPT_PATTERN } from "../lib/terminalTui";
 import { logError } from "../lib/logger";
+import { translateCurrent } from "../lib/i18n";
 import { defaultShellForOs } from "../lib/shell";
+import { sshRemoteAttachFiles } from "../lib/sshRemoteFiles";
 import type { OsPlatform } from "../lib/shell";
 import { formatShellPathList, normalizeShellForKnownOs } from "../lib/terminalShellPath";
 import type { CommandHistoryEntry, CommandTemplate, TerminalSession } from "../lib/types";
 import { useCommandHistoryStore } from "../stores/commandHistoryStore";
+import { useProjectStore } from "../stores/projectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { terminalProcessManager } from "../terminal/core/TerminalProcessManager";
 import { useTemplateStore } from "../stores/templateStore";
@@ -72,6 +75,32 @@ const SUGGESTION_CONTEXT_CACHE_TTL_MS = 2_000;
 const SUGGESTION_LOCAL_DEBOUNCE_MS = 80;
 const SUGGESTION_AI_DEBOUNCE_MS = 400;
 const IME_CROSS_SOURCE_DUPLICATE_WINDOW_MS = 80;
+
+const remoteAttachmentErrorDescription = (error: unknown) => {
+  const code = String(error);
+  if (code.includes("ssh_agent_capability_missing:fileAttach") || code.includes("unsupported_message")) {
+    return translateCurrent("terminal.attachment.sshAgentUpgradeRequired");
+  }
+  if (code.includes("ssh_agent_not_installed") || code.includes("ssh_agent_identity_required")) {
+    return translateCurrent("terminal.attachment.sshAgentRequired");
+  }
+  if (code.includes("attachment_type_unsupported")) {
+    return translateCurrent("terminal.attachment.unsupportedType");
+  }
+  if (code.includes("attachment_too_large")) {
+    return translateCurrent("terminal.attachment.tooLarge");
+  }
+  if (code.includes("ssh_project_configuration_invalid")) {
+    return translateCurrent("terminal.attachment.sshProjectRequired");
+  }
+  return translateCurrent("terminal.attachment.failedDescription", { error: code });
+};
+
+const showAttachmentPasteError = (error: unknown) => {
+  toast.error(translateCurrent("terminal.attachment.failedTitle"), {
+    description: remoteAttachmentErrorDescription(error),
+  });
+};
 
 export interface TerminalSuggestionGhostState {
   suffix: string;
@@ -1110,17 +1139,69 @@ export function useTerminalInput({
     };
   };
 
-  const savePastedImageForTerminal = async (file: File): Promise<string | null> => {
+  const getCurrentPasteContext = () => {
+    const session = useTerminalStore.getState().sessions.find((item) => item.id === sessionId);
+    const project = session?.projectId
+      ? useProjectStore.getState().projects.find((item) => item.id === session.projectId)
+      : null;
+    return { session, project };
+  };
+
+  const isSshPasteContext = (context: ReturnType<typeof getCurrentPasteContext>) => (
+    context.session?.environmentType === "ssh" || context.project?.environment_type === "ssh"
+  );
+
+  const uploadPastedLocalPaths = async (
+    paths: string[],
+    context: ReturnType<typeof getCurrentPasteContext>,
+  ): Promise<string[]> => {
+    if (!isSshPasteContext(context)) return paths;
+    if (!context.session || !context.project || context.project.environment_type !== "ssh") {
+      throw new Error("ssh_project_configuration_invalid");
+    }
+    return sshRemoteAttachFiles(
+      context.project,
+      context.session.id,
+      paths.map((path) => ({ kind: "localPath" as const, path })),
+    );
+  };
+
+  const formatPastedPaths = async (
+    paths: string[],
+    context: ReturnType<typeof getCurrentPasteContext>,
+  ) => formatShellPathList(
+    paths,
+    isSshPasteContext(context) ? "bash" : await getShellForPathQuoting(),
+  );
+
+  const savePastedImageForTerminal = async (
+    file: File,
+    context: ReturnType<typeof getCurrentPasteContext>,
+  ): Promise<string | null> => {
+    const { session, project } = context;
+
     try {
       const fileName = createClipboardImageFileName(file);
       const dataBase64 = arrayBufferToBase64(await file.arrayBuffer());
+      if (isSshPasteContext(context)) {
+        if (!session || !project || project.environment_type !== "ssh") {
+          throw new Error("ssh_project_configuration_invalid");
+        }
+        const [path] = await sshRemoteAttachFiles(project, session.id, [{
+          kind: "data",
+          fileName,
+          dataBase64,
+        }]);
+        return path ?? null;
+      }
+
       return await invoke<string>("file_attach_data", {
         fileName,
         dataBase64,
       });
     } catch (err) {
       logError("Failed to attach pasted terminal image", { sessionId, err });
-      toast.error("截图粘贴失败", { description: String(err) });
+      showAttachmentPasteError(err);
       return null;
     }
   };
@@ -1146,12 +1227,13 @@ export function useTerminalInput({
     });
     const onPaste = (event: ClipboardEvent) => {
       const imageFile = getClipboardImageFile(event.clipboardData);
+      const context = getCurrentPasteContext();
       if (imageFile) {
         event.preventDefault();
         event.stopPropagation();
-        void savePastedImageForTerminal(imageFile).then(async (path) => {
+        void savePastedImageForTerminal(imageFile, context).then(async (path) => {
           if (!path) return;
-          pasteIntoTerminal(formatShellPathList([path], await getShellForPathQuoting()));
+          pasteIntoTerminal(await formatPastedPaths([path], context));
           terminal.focus();
         });
         return;
@@ -1171,7 +1253,8 @@ export function useTerminalInput({
           .then(async (paths) => {
             const filePaths = paths.filter(Boolean);
             if (filePaths.length > 0) {
-              pasteIntoTerminal(formatShellPathList(filePaths, await getShellForPathQuoting()));
+              const attachedPaths = await uploadPastedLocalPaths(filePaths, context);
+              pasteIntoTerminal(await formatPastedPaths(attachedPaths, context));
               terminal.focus();
               return;
             }
@@ -1179,7 +1262,11 @@ export function useTerminalInput({
           })
           .catch((err) => {
             logError("Failed to read clipboard file paths", { sessionId, err });
-            if (text) pasteIntoTerminal(text);
+            if (isSshPasteContext(context)) {
+              showAttachmentPasteError(err);
+            } else if (text) {
+              pasteIntoTerminal(text);
+            }
           });
         return;
       }
@@ -1227,8 +1314,15 @@ export function useTerminalInput({
       if (dropZoneId && dropZoneId !== sessionId) return;
       if (!dropZoneId && (!isActiveRef.current || !isVisibleRef.current)) return;
 
-      pasteIntoTerminal(formatShellPathList(payload.paths, await getShellForPathQuoting()));
-      terminal.focus();
+      const context = getCurrentPasteContext();
+      try {
+        const attachedPaths = await uploadPastedLocalPaths(payload.paths, context);
+        pasteIntoTerminal(await formatPastedPaths(attachedPaths, context));
+        terminal.focus();
+      } catch (err) {
+        logError("Failed to attach dropped terminal files", { sessionId, err });
+        showAttachmentPasteError(err);
+      }
     }).then((unlisten) => {
       if (fileDropCancelled) {
         unlisten();
@@ -1278,7 +1372,7 @@ export function useTerminalInput({
       return await createClipboardPngFile(await image.rgba(), width, height);
     } catch (err) {
       logError("Failed to convert clipboard image", { sessionId, err });
-      toast.error("截图粘贴失败", { description: String(err) });
+      showAttachmentPasteError(err);
       return null;
     } finally {
       await image.close().catch(() => {});
@@ -1288,6 +1382,7 @@ export function useTerminalInput({
   // Ctrl+V / 右键粘贴统一按“文件路径 → 截图位图 → 文本”读取。资源管理器文件使用
   // 原生 CF_HDROP；截图通过 clipboard-manager 读取 RGBA 后转成 PNG，并复用现有附件保存链路。
   const readClipboardPasteText = async (): Promise<string> => {
+    const context = getCurrentPasteContext();
     let filePaths: string[] = [];
     try {
       filePaths = (await invoke<string[]>("clipboard_read_file_paths")).filter(Boolean);
@@ -1295,13 +1390,20 @@ export function useTerminalInput({
       logError("Failed to read clipboard file paths", { sessionId, err });
     }
     if (filePaths.length > 0) {
-      return formatShellPathList(filePaths, await getShellForPathQuoting());
+      try {
+        const attachedPaths = await uploadPastedLocalPaths(filePaths, context);
+        return await formatPastedPaths(attachedPaths, context);
+      } catch (err) {
+        logError("Failed to attach clipboard file paths", { sessionId, err });
+        showAttachmentPasteError(err);
+        return "";
+      }
     }
 
     const imageFile = await readClipboardImageFile();
     if (imageFile) {
-      const path = await savePastedImageForTerminal(imageFile);
-      return path ? formatShellPathList([path], await getShellForPathQuoting()) : "";
+      const path = await savePastedImageForTerminal(imageFile, context);
+      return path ? formatPastedPaths([path], context) : "";
     }
 
     try {

@@ -336,3 +336,36 @@ Pane 标记增加当前可见分屏判定：单 Pane 即使包含多个 Tab 或 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: SSH 任意文件粘贴
+
+**Date**: 2026-07-31
+**Task**: SSH 任意文件粘贴
+**Branch**: `feat/ssh-agent`
+
+### Summary
+
+SSH Agent 0.1.7 / protocol 1.10 支持任意普通文件粘贴与拖拽，固定 20 MiB 上限，保留旧 Agent 图片回退兼容。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9cfdd10b` | (see git log) |
+
+### Testing
+
+- [OK] 用户已验证任意小文件粘贴成功
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
