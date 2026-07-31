@@ -435,3 +435,36 @@ Claude、Codex、Pi、Grok 的非强制配置目录解析在已选目录失效�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: 增加资源持续上涨诊断日志
+
+**Date**: 2026-07-31
+**Task**: 增加资源持续上涨诊断日志
+**Branch**: `master`
+
+### Summary
+
+增加独立 JSONL 资源诊断日志，覆盖进程与 WebView 周期快照、终端输出积压告警和恢复状态；复用 10 MiB/7 天轮转并补齐回归测试与 V1.3.3 变更记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ce3c9360` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
