@@ -816,9 +816,7 @@ function App() {
         return;
       }
       if (supportsLocalSubagentTranscript && event.payload.event === "AgentToolStop") {
-        void useTerminalStore.getState().openSubagentTranscript(event.payload).finally(() => {
-          useTerminalStore.getState().finishSubagentTranscript(event.payload);
-        });
+        void useTerminalStore.getState().openSubagentTranscript(event.payload);
         return;
       }
       if (supportsLocalSubagentTranscript && event.payload.event === "SubagentStop") {

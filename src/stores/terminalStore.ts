@@ -667,7 +667,11 @@ function shouldSubscribeSubagentSource(previous: SubagentTranscriptSource | unde
 
 function shouldAttemptDerivedChildTranscript(payload: CliHookPayload, source: SubagentTranscriptSource): boolean {
   if (payload.source !== "claude" || source.kind === "child-jsonl") return false;
-  return Boolean(trimOptional(payload.agentId) && trimOptional(payload.cwd) && trimOptional(payload.sessionId));
+  return Boolean(
+    trimOptional(payload.agentId)
+    && trimOptional(payload.sessionId)
+    && (trimOptional(payload.cwd) || trimOptional(source.parentTranscriptPath))
+  );
 }
 
 function stopSubagentTranscriptRetry(sessionId: string, reason: string) {
@@ -3479,6 +3483,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         const result = await invoke<SubagentTranscriptSubscribeResult>("subagent_transcript_subscribe", {
           key: pseudoId,
           transcriptPath: source.transcriptPath,
+          parentTranscriptPath: source.parentTranscriptPath ?? null,
           cwd: payload.cwd ?? null,
           sessionId: payload.sessionId ?? null,
           agentId,
@@ -3515,6 +3520,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         const result = await invoke<SubagentTranscriptSubscribeResult>("subagent_transcript_subscribe", {
           key: pseudoId,
           transcriptPath: null,
+          parentTranscriptPath: source.parentTranscriptPath ?? null,
           cwd: payload.cwd ?? null,
           sessionId: payload.sessionId ?? null,
           agentId,
@@ -3634,6 +3640,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         const result = await invoke<SubagentTranscriptSubscribeResult>("subagent_transcript_subscribe", {
           key: pseudoId,
           transcriptPath: discoveredPath,
+          parentTranscriptPath: source.parentTranscriptPath ?? null,
           cwd: payload.cwd ?? null,
           sessionId: payload.sessionId ?? null,
           agentId,
