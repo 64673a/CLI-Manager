@@ -402,3 +402,36 @@ SSH Agent 0.1.7 / protocol 1.10 支持任意普通文件粘贴与拖拽，固定
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: 容忍 Hook 配置目录失效
+
+**Date**: 2026-07-31
+**Task**: 容忍 Hook 配置目录失效
+**Branch**: `master`
+
+### Summary
+
+Claude、Codex、Pi、Grok 的非强制配置目录解析在已选目录失效时返回缺失，避免阻断共享状态刷新及其他工具操作；保留目标工具明确安装或卸载时的校验，并补充回归测试、V1.3.3 变更记录和 Hook 契约。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0321d7a8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
