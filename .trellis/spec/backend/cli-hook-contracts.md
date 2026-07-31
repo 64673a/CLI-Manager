@@ -170,6 +170,7 @@ interface Settings {
 | Codex disabled, Claude installed/enabled | Health is green; Claude auto-repair may run when previously installed |
 | Both disabled | Neutral light; no reinstall; no Hook env injection |
 | Enabled tool status request fails | Preserve existing caller error handling; do not assume installed |
+| A saved config directory is missing during status inspection or another tool's action | Report that tool as missing; do not fail the shared status request or block the target tool's action |
 
 ### 5. Good/Base/Bad Cases
 
