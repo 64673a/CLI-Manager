@@ -415,7 +415,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
   const visibilityRestoreRevealTimerRef = useRef<number | null>(null);
   const visibilityRestoreRevealRafRef = useRef<number | null>(null);
   const visibilityRestoreFallbackRafRef = useRef<number | null>(null);
-  const cursorShowTimerRef = useRef<number | null>(null);
   const tuiComposerNormalizeRafRef = useRef<number | null>(null);
   const displayNormalizeOutputRef = useRef<(text: string) => string>((text) => text);
   const displayTransformOutputRef = useRef<(text: string) => string>((text) => text);
@@ -645,21 +644,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     logError("PTY write failed in XTermTerminal", { sessionId, stage, err });
   };
 
-  const cancelPendingCursorShow = () => {
-    if (cursorShowTimerRef.current !== null) {
-      window.clearTimeout(cursorShowTimerRef.current);
-      cursorShowTimerRef.current = null;
-    }
-  };
-
-  const scheduleCursorShow = () => {
-    cancelPendingCursorShow();
-    cursorShowTimerRef.current = window.setTimeout(() => {
-      cursorShowTimerRef.current = null;
-      terminalRef.current?.write("\x1b[?25h");
-    }, 80);
-  };
-
   const {
     normalizeTerminalOutput,
     updateSessionCwdIfChanged,
@@ -703,28 +687,8 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
     scheduleTuiComposerBackgroundNormalization(terminal);
   };
 
-  const processCursorVisibility = (text: string) => {
-    const cursorPattern = /\x1b\[\?25[hl]/g;
-    let processed = "";
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = cursorPattern.exec(text)) !== null) {
-      processed += text.slice(lastIndex, match.index);
-      const sequence = match[0];
-      if (sequence.endsWith("l")) {
-        cancelPendingCursorShow();
-        processed += sequence;
-      } else {
-        scheduleCursorShow();
-      }
-      lastIndex = match.index + sequence.length;
-    }
-
-    return processed + text.slice(lastIndex);
-  };
-  displayTransformOutputRef.current = (text) => processCursorVisibility(
-    piTerminalCompatibilityRef.current?.transformOutput(text) ?? text,
+  displayTransformOutputRef.current = (text) => (
+    piTerminalCompatibilityRef.current?.transformOutput(text) ?? text
   );
 
   const clearVisibilityRestoreRevealSchedule = () => {
@@ -1566,7 +1530,6 @@ export function XTermTerminal({ sessionId, isActive = true, isVisible = true, fo
 
 
     return () => {
-      cancelPendingCursorShow();
       detachPasteAndDrop();
       contextMenuTarget.removeEventListener("contextmenu", onContextMenu);
       disposeTerminalSubsystem(inputDisposables);

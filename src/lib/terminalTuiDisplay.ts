@@ -210,7 +210,7 @@ export function normalizeTerminalTuiComposerBackground(
       if (!line) continue;
       const backgroundState = getLineBackgroundState(line);
       if (!backgroundState.hasExplicitBackground && !backgroundState.hasInverse) continue;
-      if (!clearLineBackground(line, backgroundState.hasInverse)) continue;
+      if (!clearLineBackground(line, backgroundState.hasWideInverse)) continue;
       markChangedRow(row);
     }
     if (lastChangedRow >= firstChangedRow) {

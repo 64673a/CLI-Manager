@@ -1292,33 +1292,15 @@ terminal.focus();
 
 **Prevention**: For user-facing terminal clear actions, send Ctrl+L (`\x0c`) through `pty_write` so the shell/TUI clears or redraws through the same path as keyboard input. Reserve `terminal.clear()` for internal buffer maintenance where IME/helper textarea position is irrelevant.
 
-### Common Mistake: Treating `cursorBlink` as full cursor visibility control
+### Convention: Keep application cursor visibility sequences intact
 
-**Symptom**: A TUI such as Codex still shows rapid cursor flashing after `cursorBlink` is set to `false`.
+**Contract**: PTY output must pass DECTCEM sequences (`CSI ?25h` show cursor and `CSI ?25l` hide cursor) to xterm without filtering, delayed reinjection, or a CLI-specific visual cursor overlay.
 
-**Cause**: `cursorBlink` only controls xterm's own blink animation. Terminal applications can still emit DECTCEM sequences (`CSI ?25h` show cursor, `CSI ?25l` hide cursor), and xterm honors those independently while processing PTY output.
+**Why**: TUI applications own their cursor visibility and position. Delaying only the show sequence can hide the cursor throughout continuous output, while replacing a TUI cursor from inferred viewport structure creates new disagreement during redraw and input editing.
 
-**Wrong**:
+**Prevention**: Do not add Codex-specific cursor stabilization in `XTermTerminal`. Cursor-position flicker emitted during Codex redraw remains native application behavior; Claude background-image caret preservation belongs to buffer background normalization and must not rewrite DECTCEM.
 
-```tsx
-const terminal = new Terminal({
-  cursorBlink: false,
-});
-// Assumes this also suppresses application-driven show/hide cursor churn.
-```
-
-**Correct**:
-
-```tsx
-if (sequence === "\x1b[?25l") {
-  cancelPendingCursorShow();
-  writeNow(sequence);
-} else if (sequence === "\x1b[?25h") {
-  scheduleCursorShow();
-}
-```
-
-**Prevention**: For high-frequency TUI redraw issues, inspect application-emitted ANSI cursor visibility sequences before changing xterm appearance options. Pass hide through immediately, debounce show, and keep output processing in the PTY write path instead of adding CLI-specific UI state.
+**Tests**: Run `node --test scripts/terminalPiCompatibility.test.mjs scripts/terminalNewlineShortcut.test.mjs` and `npx tsc --noEmit`. Assert the shared output transform contains only the existing Pi compatibility transform and no cursor visibility filter or visual cursor overlay.
 
 ### Common Mistake: Letting xterm helper textarea follow non-IME redraw cursors
 
@@ -1457,7 +1439,7 @@ terminal.refresh(row, row);
 
 For terminal background images, active transparency mode is an appearance-mode gate equivalent to theme brightness. Keep prompt detection narrow, but do not block normalization only because the terminal theme is dark; dark themes can still expose stale explicit backgrounds as opaque boxes over the image.
 
-If a CLI draws large opaque panels or status rows over a terminal background image, remember that CLI themes only affect which ANSI colors are emitted; they do not make ANSI background cells transparent. For known full-screen AI TUIs such as Claude/Codex, the background-image mode may clear explicit background attrs and inverse flags across the visible viewport. Keep that broad pass gated by active transparency plus the known TUI session or a visible TUI signature; use the narrower prompt-row correction for unknown tools.
+If a CLI draws large opaque panels or status rows over a terminal background image, remember that CLI themes only affect which ANSI colors are emitted; they do not make ANSI background cells transparent. For known full-screen AI TUIs such as Claude/Codex, the background-image mode may clear explicit background attrs and wide inverse regions across the visible viewport. Preserve isolated inverse cells because Claude can use one as its software input cursor. Keep that broad pass gated by active transparency plus the known TUI session or a visible TUI signature; use the narrower prompt-row correction for unknown tools.
 
 Do not keep WebGL enabled while a terminal background image is active. The default renderer is the safer path for transparent backgrounds and xterm buffer-attr corrections; WebGL can preserve or redraw opaque TUI cells in ways that make Codex/Ratatui panels appear as black blocks.
 

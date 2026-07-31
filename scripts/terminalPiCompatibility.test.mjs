@@ -278,6 +278,7 @@ test("live, replay, reset, and serialized snapshot use the shared transform", ()
   assert.match(displaySource, /const transformed = transformOutputRef\.current\(text\);/);
   assert.match(displaySource, /if \(first\.reset\) \{\s*outputDiagnosticsRef\?\.current\?\.reset\(\);/);
   assert.match(componentSource, /terminal\.write\(displayTransformOutputRef\.current\(initialTerminalOutput\)/);
-  assert.match(componentSource, /processCursorVisibility\(\s*piTerminalCompatibilityRef\.current\?\.transformOutput\(text\) \?\? text/);
+  assert.match(componentSource, /displayTransformOutputRef\.current = \(text\) => \(\s*piTerminalCompatibilityRef\.current\?\.transformOutput\(text\) \?\? text\s*\)/);
+  assert.doesNotMatch(componentSource, /processCursorVisibility|cursorShowTimerRef|scheduleCursorShow|cancelPendingCursorShow|stabilizeCodexCursorVisibility|codexVisualCursor|resolveStableTuiCursorAnchor/);
   assert.doesNotMatch(componentSource, /normalizeToolBackgrounds|toolPendingBg|toolSuccessBg|toolErrorBg/);
 });

@@ -25,7 +25,58 @@ const transpiled = ts.transpileModule(source, {
 const modulePath = join(tempDir, "terminalTuiDisplay.mjs");
 writeFileSync(modulePath, transpiled, "utf8");
 
-const { hasCodexTuiViewport } = await import(pathToFileURL(modulePath).href);
+const { hasCodexTuiViewport, normalizeTerminalTuiComposerBackground } = await import(pathToFileURL(modulePath).href);
+
+const XTERM_BG_COLOR_MASK = 0x03ffffff;
+const XTERM_INVERSE_FLAG = 0x04000000;
+
+function createMutableTerminal(cellAttrs) {
+  const cells = cellAttrs.map(({ fg = 0, bg = 0 }) => ({ fg, bg }));
+  const probe = {
+    fg: 0,
+    bg: 0,
+    getBgColorMode() {
+      return this.bg & 0x03000000;
+    },
+    isInverse() {
+      return (this.fg & XTERM_INVERSE_FLAG) === 0 ? 0 : 1;
+    },
+  };
+  const loadCell = (index, target) => {
+    target.fg = cells[index].fg;
+    target.bg = cells[index].bg;
+    return target;
+  };
+  const line = {
+    length: cells.length,
+    translateToString: () => "Claude Code",
+    getCell: loadCell,
+    _line: {
+      length: cells.length,
+      loadCell,
+      setCell: (index, cell) => {
+        cells[index] = { fg: cell.fg, bg: cell.bg };
+      },
+    },
+  };
+  const refreshes = [];
+  return {
+    cells,
+    refreshes,
+    terminal: {
+      cols: cells.length,
+      rows: 1,
+      buffer: {
+        active: {
+          viewportY: 0,
+          getNullCell: () => probe,
+          getLine: () => line,
+        },
+      },
+      refresh: (start, end) => refreshes.push([start, end]),
+    },
+  };
+}
 
 function createTerminal(lines, viewportY = 0, rows = lines.length, type = "normal") {
   const bufferLines = lines.map((text) => ({
@@ -57,6 +108,55 @@ test("does not classify ordinary shells or Claude Code as Codex", () => {
 test("only scans the current viewport", () => {
   const terminal = createTerminal(["OpenAI Codex", "PS F:\\\\github>", "ready"], 1, 2);
   assert.equal(hasCodexTuiViewport(terminal), false);
+});
+
+test("transparent Claude normalization preserves an isolated inverse software cursor", () => {
+  const fixture = createMutableTerminal([
+    { bg: 0x03010203 },
+    { fg: XTERM_INVERSE_FLAG },
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+  ]);
+
+  normalizeTerminalTuiComposerBackground(fixture.terminal, {
+    shouldNormalize: true,
+    isTransparent: true,
+    isLightTheme: false,
+    isCodexSession: false,
+    isClaudeSession: true,
+  });
+
+  assert.equal(fixture.cells[0].bg & XTERM_BG_COLOR_MASK, 0);
+  assert.equal(fixture.cells[1].fg & XTERM_INVERSE_FLAG, XTERM_INVERSE_FLAG);
+  assert.deepEqual(fixture.refreshes, [[0, 0]]);
+});
+
+test("transparent TUI normalization still clears wide inverse backgrounds", () => {
+  const fixture = createMutableTerminal([
+    { fg: XTERM_INVERSE_FLAG },
+    { fg: XTERM_INVERSE_FLAG },
+    { fg: XTERM_INVERSE_FLAG },
+    { fg: XTERM_INVERSE_FLAG },
+    {},
+    {},
+    {},
+    {},
+  ]);
+
+  normalizeTerminalTuiComposerBackground(fixture.terminal, {
+    shouldNormalize: true,
+    isTransparent: true,
+    isLightTheme: false,
+    isCodexSession: true,
+    isClaudeSession: false,
+  });
+
+  assert.equal(fixture.cells.some((cell) => (cell.fg & XTERM_INVERSE_FLAG) !== 0), false);
+  assert.deepEqual(fixture.refreshes, [[0, 0]]);
 });
 
 test("shared CLI context includes immutable session metadata for XTermTerminal", () => {
