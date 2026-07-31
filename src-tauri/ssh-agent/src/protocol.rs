@@ -277,6 +277,7 @@ fn capabilities() -> Value {
         "fileRead",
         "fileSearch",
         "fileAttach",
+        "fileAttachAny",
         "gitListRepositories",
         "gitChanges",
         "gitDiff",
@@ -435,12 +436,24 @@ pub fn run_bridge(
         }
         if matches!(
             frame.kind.as_str(),
-            "fileAttachBegin" | "fileAttachChunk" | "fileAttachFinish" | "fileAttachAbort"
+            "fileAttachBegin"
+                | "fileAttachChunk"
+                | "fileAttachFinish"
+                | "fileAttachAbort"
+                | "fileAttachAnyBegin"
+                | "fileAttachAnyChunk"
+                | "fileAttachAnyFinish"
+                | "fileAttachAnyAbort"
         ) {
             let response = match frame.kind.as_str() {
-                "fileAttachBegin" => {
+                "fileAttachBegin" | "fileAttachAnyBegin" => {
+                    let any_file = frame.kind == "fileAttachAnyBegin";
                     match serde_json::from_value::<FileAttachBeginRequest>(frame.payload) {
-                        Ok(request) => match attachment_uploads.begin(request) {
+                        Ok(request) => match if any_file {
+                            attachment_uploads.begin_any(request)
+                        } else {
+                            attachment_uploads.begin(request)
+                        } {
                             Ok(result) => response(
                                 request_id,
                                 "response",
@@ -455,7 +468,7 @@ pub fn run_bridge(
                         ),
                     }
                 }
-                "fileAttachChunk" => {
+                "fileAttachChunk" | "fileAttachAnyChunk" => {
                     match serde_json::from_value::<FileAttachChunkRequest>(frame.payload) {
                         Ok(request) => match attachment_uploads.append(request) {
                             Ok(received_bytes) => response(
@@ -472,7 +485,7 @@ pub fn run_bridge(
                         ),
                     }
                 }
-                "fileAttachFinish" => {
+                "fileAttachFinish" | "fileAttachAnyFinish" => {
                     match serde_json::from_value::<FileAttachFinishRequest>(frame.payload) {
                         Ok(request) => match attachment_uploads.finish(request) {
                             Ok(result) => response(
@@ -858,6 +871,7 @@ mod tests {
             "fileRead",
             "fileSearch",
             "fileAttach",
+            "fileAttachAny",
             "gitListRepositories",
             "gitChanges",
             "gitDiff",

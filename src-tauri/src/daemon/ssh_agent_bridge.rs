@@ -266,6 +266,10 @@ impl BridgeLane {
                 | "fileAttachChunk"
                 | "fileAttachFinish"
                 | "fileAttachAbort"
+                | "fileAttachAnyBegin"
+                | "fileAttachAnyChunk"
+                | "fileAttachAnyFinish"
+                | "fileAttachAnyAbort"
                 | "gitListRepositories"
                 | "gitChanges"
                 | "gitDiff"
@@ -574,6 +578,10 @@ impl SshAgentBridgeManager {
                     | "fileAttachChunk"
                     | "fileAttachFinish"
                     | "fileAttachAbort"
+                    | "fileAttachAnyBegin"
+                    | "fileAttachAnyChunk"
+                    | "fileAttachAnyFinish"
+                    | "fileAttachAnyAbort"
                     | "gitListRepositories"
                     | "gitChanges"
                     | "gitDiff"
@@ -754,6 +762,10 @@ fn required_capability(kind: &str) -> Option<&'static str> {
         "fileAttachBegin" | "fileAttachChunk" | "fileAttachFinish" | "fileAttachAbort" => {
             Some("fileAttach")
         }
+        "fileAttachAnyBegin"
+        | "fileAttachAnyChunk"
+        | "fileAttachAnyFinish"
+        | "fileAttachAnyAbort" => Some("fileAttachAny"),
         _ => None,
     }
 }
@@ -1587,32 +1599,40 @@ mod tests {
     }
 
     #[test]
-    fn missing_attachment_capability_is_rejected_before_request_write() {
-        let (_reader_sender, reader_receiver) = mpsc::sync_channel(1);
-        let (response_sender, response_receiver) = mpsc::sync_channel(1);
-        let mut writer = Vec::new();
-        let mut request_number = 9;
+    fn missing_attachment_capabilities_are_rejected_before_request_write() {
+        for (kind, expected_error) in [
+            ("fileAttachBegin", "ssh_agent_capability_missing:fileAttach"),
+            (
+                "fileAttachAnyBegin",
+                "ssh_agent_capability_missing:fileAttachAny",
+            ),
+        ] {
+            let (_reader_sender, reader_receiver) = mpsc::sync_channel(1);
+            let (response_sender, response_receiver) = mpsc::sync_channel(1);
+            let mut writer = Vec::new();
+            let mut request_number = 9;
 
-        handle_agent_request(
-            &mut writer,
-            &reader_receiver,
-            "host-1",
-            &mut request_number,
-            &[],
-            AgentBridgeRequest {
-                kind: "fileAttachBegin".to_string(),
-                payload: json!({}),
-                response: response_sender,
-            },
-        )
-        .unwrap();
+            handle_agent_request(
+                &mut writer,
+                &reader_receiver,
+                "host-1",
+                &mut request_number,
+                &[],
+                AgentBridgeRequest {
+                    kind: kind.to_string(),
+                    payload: json!({}),
+                    response: response_sender,
+                },
+            )
+            .unwrap();
 
-        assert!(writer.is_empty());
-        assert_eq!(request_number, 9);
-        assert_eq!(
-            response_receiver.recv().unwrap().unwrap_err(),
-            "ssh_agent_capability_missing:fileAttach"
-        );
+            assert!(writer.is_empty());
+            assert_eq!(request_number, 9);
+            assert_eq!(
+                response_receiver.recv().unwrap().unwrap_err(),
+                expected_error
+            );
+        }
     }
 
     #[test]
@@ -1816,6 +1836,10 @@ mod tests {
         );
         assert_eq!(BridgeLane::for_request("gitChanges"), BridgeLane::Git);
         assert_eq!(required_capability("fileAttachBegin"), Some("fileAttach"));
+        assert_eq!(
+            required_capability("fileAttachAnyBegin"),
+            Some("fileAttachAny")
+        );
         assert!(!BridgeLane::Primary.is_request_driven());
         assert!(BridgeLane::Readonly.is_request_driven());
         assert!(BridgeLane::Git.is_request_driven());

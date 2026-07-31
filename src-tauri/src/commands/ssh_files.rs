@@ -4,12 +4,30 @@ use base64::{engine::general_purpose, Engine as _};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{Cursor, Read};
 use std::path::Path;
 
-const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
+const LEGACY_IMAGE_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
+const MAX_LEGACY_IMAGE_PIXELS: u64 = 12_000_000;
 const MAX_ATTACHMENT_BASE64_BYTES: usize = MAX_ATTACHMENT_BYTES.div_ceil(3) * 4;
 const ATTACHMENT_CHUNK_BYTES: usize = 512 * 1024;
-const ATTACHMENT_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+const LEGACY_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
+#[derive(Clone, Copy)]
+enum AttachmentProtocol {
+    LegacyImage,
+    AnyFile,
+}
+
+impl AttachmentProtocol {
+    fn kind(self, operation: &str) -> String {
+        match self {
+            Self::LegacyImage => format!("fileAttach{operation}"),
+            Self::AnyFile => format!("fileAttachAny{operation}"),
+        }
+    }
+}
 
 enum AttachmentSource {
     Data {
@@ -62,18 +80,37 @@ async fn request(
 }
 
 fn validate_attachment_name(file_name: &str) -> Result<(), String> {
-    if file_name.is_empty() || file_name.len() > 255 || file_name.contains(['\0', '\r', '\n']) {
+    if file_name.is_empty()
+        || file_name.len() > 255
+        || matches!(file_name, "." | "..")
+        || file_name.contains(['\0', '\r', '\n', '/', '\\'])
+    {
         return Err("attachment_name_invalid".to_string());
     }
-    let supported = Path::new(file_name)
+    Ok(())
+}
+
+fn is_legacy_image_name(file_name: &str) -> bool {
+    Path::new(file_name)
         .extension()
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
-        .is_some_and(|extension| ATTACHMENT_EXTENSIONS.contains(&extension.as_str()));
-    if !supported {
-        return Err("attachment_type_unsupported".to_string());
+        .is_some_and(|extension| LEGACY_IMAGE_EXTENSIONS.contains(&extension.as_str()))
+}
+
+fn can_fallback_to_legacy_image(file_name: &str, data: &[u8]) -> bool {
+    if data.len() > LEGACY_IMAGE_ATTACHMENT_BYTES || !is_legacy_image_name(file_name) {
+        return false;
     }
-    Ok(())
+    let Ok(reader) = image::ImageReader::new(Cursor::new(data)).with_guessed_format() else {
+        return false;
+    };
+    reader
+        .into_dimensions()
+        .ok()
+        .is_some_and(|(width, height)| {
+            (width as u64).saturating_mul(height as u64) <= MAX_LEGACY_IMAGE_PIXELS
+        })
 }
 
 fn decode_attachment(file_name: String, data_base64: String) -> Result<(String, Vec<u8>), String> {
@@ -113,7 +150,12 @@ fn read_attachment(path: String) -> Result<(String, Vec<u8>), String> {
         .ok_or_else(|| "attachment_name_invalid".to_string())?
         .to_string();
     validate_attachment_name(&file_name)?;
-    let data = fs::read(canonical).map_err(|_| "attachment_local_file_unavailable".to_string())?;
+    let file =
+        fs::File::open(canonical).map_err(|_| "attachment_local_file_unavailable".to_string())?;
+    let mut data = Vec::with_capacity((metadata.len() as usize).min(MAX_ATTACHMENT_BYTES));
+    file.take(MAX_ATTACHMENT_BYTES as u64 + 1)
+        .read_to_end(&mut data)
+        .map_err(|_| "attachment_local_file_unavailable".to_string())?;
     validate_attachment_bytes(&data)?;
     Ok((file_name, data))
 }
@@ -153,17 +195,34 @@ fn upload_attachment(
     validate_attachment_name(&file_name)?;
     validate_attachment_bytes(&data)?;
     let sha256 = format!("{:x}", Sha256::digest(&data));
-    let begin = client.ssh_agent_request(
+    let begin_payload = json!({
+        "sessionId": session_id,
+        "fileName": file_name,
+        "sizeBytes": data.len(),
+        "sha256": sha256,
+    });
+    let mut protocol = AttachmentProtocol::AnyFile;
+    let begin = match client.ssh_agent_request(
         consumer_id.clone(),
         ssh_launch.clone(),
-        "fileAttachBegin".to_string(),
-        json!({
-            "sessionId": session_id,
-            "fileName": file_name,
-            "sizeBytes": data.len(),
-            "sha256": sha256,
-        }),
-    )?;
+        protocol.kind("Begin"),
+        begin_payload.clone(),
+    ) {
+        Ok(response) => response,
+        Err(error)
+            if error == "ssh_agent_capability_missing:fileAttachAny"
+                && can_fallback_to_legacy_image(&file_name, &data) =>
+        {
+            protocol = AttachmentProtocol::LegacyImage;
+            client.ssh_agent_request(
+                consumer_id.clone(),
+                ssh_launch.clone(),
+                protocol.kind("Begin"),
+                begin_payload,
+            )?
+        }
+        Err(error) => return Err(error),
+    };
     let upload_id = begin
         .get("uploadId")
         .and_then(Value::as_str)
@@ -178,7 +237,7 @@ fn upload_attachment(
             let response = client.ssh_agent_request(
                 consumer_id.clone(),
                 ssh_launch.clone(),
-                "fileAttachChunk".to_string(),
+                protocol.kind("Chunk"),
                 json!({
                     "uploadId": upload_id,
                     "offset": offset,
@@ -193,7 +252,7 @@ fn upload_attachment(
         let response = client.ssh_agent_request(
             consumer_id.clone(),
             ssh_launch.clone(),
-            "fileAttachFinish".to_string(),
+            protocol.kind("Finish"),
             json!({ "uploadId": upload_id }),
         )?;
         if response.get("sizeBytes").and_then(Value::as_u64) != Some(data.len() as u64) {
@@ -211,7 +270,7 @@ fn upload_attachment(
         let _ = client.ssh_agent_request(
             consumer_id,
             ssh_launch,
-            "fileAttachAbort".to_string(),
+            protocol.kind("Abort"),
             json!({ "uploadId": upload_id }),
         );
     }
@@ -341,20 +400,23 @@ pub async fn ssh_remote_file_search(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_attachment, read_attachment, validate_attachment_name,
-        validate_remote_attachment_path,
+        can_fallback_to_legacy_image, decode_attachment, is_legacy_image_name, read_attachment,
+        validate_attachment_name, validate_remote_attachment_path, MAX_ATTACHMENT_BYTES,
     };
     use base64::{engine::general_purpose, Engine as _};
     use std::fs;
 
     #[test]
-    fn attachment_names_use_an_image_allowlist() {
+    fn attachment_names_accept_safe_regular_file_names() {
         assert!(validate_attachment_name("shot.PNG").is_ok());
-        assert!(validate_attachment_name("shot.webp").is_ok());
-        assert_eq!(
-            validate_attachment_name("notes.txt").unwrap_err(),
-            "attachment_type_unsupported"
-        );
+        assert!(validate_attachment_name("notes.txt").is_ok());
+        assert!(validate_attachment_name(".env").is_ok());
+        assert!(validate_attachment_name("LICENSE").is_ok());
+        assert!(is_legacy_image_name("shot.webp"));
+        assert!(!is_legacy_image_name("notes.txt"));
+        assert!(!can_fallback_to_legacy_image("shot.png", b"not-an-image"));
+        assert!(validate_attachment_name("../shot.png").is_err());
+        assert!(validate_attachment_name("folder\\shot.png").is_err());
         assert!(validate_attachment_name("../shot.png\n").is_err());
     }
 
@@ -378,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    fn attachment_data_and_local_paths_are_bounded_images() {
+    fn attachment_data_and_local_paths_are_bounded_files() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("pixel.png");
         image::save_buffer_with_format(
@@ -391,6 +453,7 @@ mod tests {
         )
         .unwrap();
         let bytes = fs::read(&path).unwrap();
+        assert!(can_fallback_to_legacy_image("pixel.png", &bytes));
         let (_, decoded) =
             decode_attachment("pixel.png".into(), general_purpose::STANDARD.encode(&bytes))
                 .unwrap();
@@ -398,5 +461,21 @@ mod tests {
         let (name, loaded) = read_attachment(path.display().to_string()).unwrap();
         assert_eq!(name, "pixel.png");
         assert_eq!(loaded, bytes);
+
+        let text_path = root.path().join("notes.txt");
+        fs::write(&text_path, b"hello").unwrap();
+        let (name, loaded) = read_attachment(text_path.display().to_string()).unwrap();
+        assert_eq!(name, "notes.txt");
+        assert_eq!(loaded, b"hello");
+
+        let oversized = root.path().join("oversized.bin");
+        fs::File::create(&oversized)
+            .unwrap()
+            .set_len(MAX_ATTACHMENT_BYTES as u64 + 1)
+            .unwrap();
+        assert_eq!(
+            read_attachment(oversized.display().to_string()).unwrap_err(),
+            "attachment_too_large"
+        );
     }
 }

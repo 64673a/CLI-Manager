@@ -17,12 +17,19 @@ const MAX_IMAGE_READ_BYTES: u64 = 5 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 12_000_000;
 const MAX_SEARCH_FILE_BYTES: u64 = 1024 * 1024;
 const MAX_WALK_FILES: usize = 20_000;
-const MAX_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_LEGACY_IMAGE_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_ATTACHMENT_CHUNK_BYTES: usize = 512 * 1024;
 const MAX_ATTACHMENT_CHUNK_BASE64_BYTES: usize = MAX_ATTACHMENT_CHUNK_BYTES.div_ceil(3) * 4;
 const MAX_ACTIVE_ATTACHMENT_UPLOADS: usize = 16;
 const ATTACHMENT_RETENTION: Duration = Duration::from_secs(48 * 60 * 60);
-const ATTACHMENT_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+const LEGACY_IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+
+#[derive(Clone, Copy)]
+enum AttachmentKind {
+    LegacyImage,
+    AnyFile,
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,11 +123,13 @@ struct PendingFileAttachment {
     parent_dir: PathBuf,
     temporary_path: PathBuf,
     target_path: PathBuf,
+    cleanup_dir: Option<PathBuf>,
     file: File,
     expected_size: u64,
     written: u64,
     expected_sha256: String,
     hasher: Sha256,
+    validate_image: bool,
 }
 
 #[derive(Default)]
@@ -134,13 +143,22 @@ impl FileAttachmentUploads {
         request: FileAttachBeginRequest,
     ) -> Result<FileAttachBeginResult, String> {
         let root = attachment_cache_root()?;
-        self.begin_in_root(request, root)
+        self.begin_in_root(request, root, AttachmentKind::LegacyImage)
+    }
+
+    pub fn begin_any(
+        &mut self,
+        request: FileAttachBeginRequest,
+    ) -> Result<FileAttachBeginResult, String> {
+        let root = attachment_cache_root()?;
+        self.begin_in_root(request, root, AttachmentKind::AnyFile)
     }
 
     fn begin_in_root(
         &mut self,
         request: FileAttachBeginRequest,
         root: PathBuf,
+        kind: AttachmentKind,
     ) -> Result<FileAttachBeginResult, String> {
         if self.active.len() >= MAX_ACTIVE_ATTACHMENT_UPLOADS {
             return Err("attachment_upload_limit_reached".to_string());
@@ -149,31 +167,77 @@ impl FileAttachmentUploads {
         if request.size_bytes == 0 {
             return Err("attachment_empty".to_string());
         }
-        if request.size_bytes > MAX_ATTACHMENT_BYTES {
+        let max_bytes = match kind {
+            AttachmentKind::LegacyImage => MAX_LEGACY_IMAGE_ATTACHMENT_BYTES,
+            AttachmentKind::AnyFile => MAX_ATTACHMENT_BYTES,
+        };
+        if request.size_bytes > max_bytes {
             return Err("attachment_too_large".to_string());
         }
-        let extension = attachment_extension(&request.file_name)?;
+        validate_attachment_name(&request.file_name)?;
+        let legacy_extension = match kind {
+            AttachmentKind::LegacyImage => Some(attachment_extension(&request.file_name)?),
+            AttachmentKind::AnyFile => None,
+        };
         let expected_sha256 = normalize_sha256(&request.sha256)?;
         let cache_root = ensure_private_dir(&root)?;
         cleanup_expired_attachments(&cache_root, ATTACHMENT_RETENTION)?;
-        let parent_dir = ensure_private_child_dir(&cache_root, &request.session_id)?;
+        let session_dir = ensure_private_child_dir(&cache_root, &request.session_id)?;
 
         for _ in 0..4 {
             let upload_id = uuid::Uuid::new_v4().to_string();
-            let target_path = parent_dir.join(format!("{upload_id}.{extension}"));
-            let temporary_path = parent_dir.join(format!(".{upload_id}.upload.{extension}"));
+            let (parent_dir, target_path, temporary_path, cleanup_dir) = match &legacy_extension {
+                Some(extension) => (
+                    session_dir.clone(),
+                    session_dir.join(format!("{upload_id}.{extension}")),
+                    session_dir.join(format!(".{upload_id}.upload.{extension}")),
+                    None,
+                ),
+                None => {
+                    let upload_dir = session_dir.join(&upload_id);
+                    match fs::create_dir(&upload_dir) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                        Err(_) => return Err("attachment_cache_create_failed".to_string()),
+                    }
+                    if let Err(error) = set_private_dir_permissions(&upload_dir) {
+                        let _ = fs::remove_dir(&upload_dir);
+                        return Err(error);
+                    }
+                    let canonical = match upload_dir.canonicalize() {
+                        Ok(path) if path.starts_with(&session_dir) => path,
+                        _ => {
+                            let _ = fs::remove_dir(&upload_dir);
+                            return Err("attachment_cache_invalid".to_string());
+                        }
+                    };
+                    (
+                        canonical.clone(),
+                        canonical.join(&request.file_name),
+                        canonical.join(".upload"),
+                        Some(canonical),
+                    )
+                }
+            };
             let file = match OpenOptions::new()
                 .create_new(true)
                 .write(true)
                 .open(&temporary_path)
             {
                 Ok(file) => file,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return Err("attachment_create_failed".to_string()),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    remove_attachment_dir(cleanup_dir.as_deref());
+                    continue;
+                }
+                Err(_) => {
+                    remove_attachment_dir(cleanup_dir.as_deref());
+                    return Err("attachment_create_failed".to_string());
+                }
             };
             if let Err(error) = set_private_file_permissions(&temporary_path) {
                 drop(file);
                 let _ = fs::remove_file(&temporary_path);
+                remove_attachment_dir(cleanup_dir.as_deref());
                 return Err(error);
             }
             self.active.insert(
@@ -183,11 +247,13 @@ impl FileAttachmentUploads {
                     parent_dir: parent_dir.clone(),
                     temporary_path,
                     target_path,
+                    cleanup_dir,
                     file,
                     expected_size: request.size_bytes,
                     written: 0,
                     expected_sha256,
                     hasher: Sha256::new(),
+                    validate_image: matches!(kind, AttachmentKind::LegacyImage),
                 },
             );
             return Ok(FileAttachBeginResult { upload_id });
@@ -242,6 +308,7 @@ impl FileAttachmentUploads {
         };
         drop(pending.file);
         let _ = fs::remove_file(pending.temporary_path);
+        remove_attachment_dir(pending.cleanup_dir.as_deref());
         true
     }
 }
@@ -251,6 +318,7 @@ impl Drop for FileAttachmentUploads {
         for (_, pending) in self.active.drain() {
             drop(pending.file);
             let _ = fs::remove_file(pending.temporary_path);
+            remove_attachment_dir(pending.cleanup_dir.as_deref());
         }
     }
 }
@@ -280,16 +348,31 @@ fn validate_attachment_session_id(value: &str) -> Result<(), String> {
 }
 
 fn attachment_extension(file_name: &str) -> Result<String, String> {
-    if file_name.is_empty() || file_name.len() > 255 || file_name.contains(['\0', '\r', '\n']) {
-        return Err("attachment_name_invalid".to_string());
-    }
+    validate_attachment_name(file_name)?;
     let extension = Path::new(file_name)
         .extension()
         .and_then(|value| value.to_str())
         .map(str::to_ascii_lowercase)
-        .filter(|value| ATTACHMENT_EXTENSIONS.contains(&value.as_str()))
+        .filter(|value| LEGACY_IMAGE_EXTENSIONS.contains(&value.as_str()))
         .ok_or_else(|| "attachment_type_unsupported".to_string())?;
     Ok(extension)
+}
+
+fn validate_attachment_name(file_name: &str) -> Result<(), String> {
+    if file_name.is_empty()
+        || file_name.len() > 255
+        || matches!(file_name, "." | "..")
+        || file_name.contains(['\0', '\r', '\n', '/', '\\'])
+    {
+        return Err("attachment_name_invalid".to_string());
+    }
+    Ok(())
+}
+
+fn remove_attachment_dir(path: Option<&Path>) {
+    if let Some(path) = path {
+        let _ = fs::remove_dir(path);
+    }
 }
 
 fn normalize_sha256(value: &str) -> Result<String, String> {
@@ -374,9 +457,11 @@ fn finish_attachment(mut pending: PendingFileAttachment) -> Result<FileAttachRes
         if actual_sha256 != pending.expected_sha256 {
             return Err("attachment_sha256_mismatch".to_string());
         }
-        let (width, height) = image::image_dimensions(&temporary_path)
-            .map_err(|_| "attachment_image_invalid".to_string())?;
-        validate_image_pixel_count(width, height)?;
+        if pending.validate_image {
+            let (width, height) = image::image_dimensions(&temporary_path)
+                .map_err(|_| "attachment_image_invalid".to_string())?;
+            validate_image_pixel_count(width, height)?;
+        }
 
         let parent = pending
             .target_path
@@ -413,6 +498,7 @@ fn finish_attachment(mut pending: PendingFileAttachment) -> Result<FileAttachRes
     })();
     if result.is_err() {
         let _ = fs::remove_file(temporary_path);
+        remove_attachment_dir(pending.cleanup_dir.as_deref());
     }
     result
 }
@@ -434,17 +520,37 @@ fn cleanup_expired_attachments(root: &Path, retention: Duration) -> Result<(), S
             let file_type = entry
                 .file_type()
                 .map_err(|_| "attachment_cleanup_failed".to_string())?;
-            if file_type.is_symlink() || !file_type.is_file() {
+            if file_type.is_symlink() {
                 continue;
             }
-            let expired = entry
-                .metadata()
+            if file_type.is_file() {
+                if attachment_path_expired(&entry.path(), now, retention) {
+                    let _ = fs::remove_file(entry.path());
+                }
+                continue;
+            }
+            if !file_type.is_dir() {
+                continue;
+            }
+            for child in
+                fs::read_dir(entry.path()).map_err(|_| "attachment_cleanup_failed".to_string())?
+            {
+                let child = child.map_err(|_| "attachment_cleanup_failed".to_string())?;
+                let child_type = child
+                    .file_type()
+                    .map_err(|_| "attachment_cleanup_failed".to_string())?;
+                if child_type.is_file()
+                    && !child_type.is_symlink()
+                    && attachment_path_expired(&child.path(), now, retention)
+                {
+                    let _ = fs::remove_file(child.path());
+                }
+            }
+            if fs::read_dir(entry.path())
                 .ok()
-                .and_then(|metadata| metadata.modified().ok())
-                .and_then(|modified| now.duration_since(modified).ok())
-                .is_some_and(|age| age >= retention);
-            if expired {
-                let _ = fs::remove_file(entry.path());
+                .is_some_and(|mut entries| entries.next().is_none())
+            {
+                let _ = fs::remove_dir(entry.path());
             }
         }
         if fs::read_dir(session.path())
@@ -455,6 +561,14 @@ fn cleanup_expired_attachments(root: &Path, retention: Duration) -> Result<(), S
         }
     }
     Ok(())
+}
+
+fn attachment_path_expired(path: &Path, now: SystemTime, retention: Duration) -> bool {
+    path.metadata()
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= retention)
 }
 
 pub fn list(request: FileListRequest) -> Result<Vec<RemoteFileEntry>, String> {
@@ -777,10 +891,11 @@ fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_encode, cleanup_expired_attachments, list, read, search, FileAttachAbortRequest,
-        FileAttachBeginRequest, FileAttachChunkRequest, FileAttachFinishRequest,
-        FileAttachmentUploads, FileListRequest, FileReadRequest, FileSearchRequest,
-        ATTACHMENT_RETENTION, MAX_ENTRIES, MAX_SEARCH_RESULTS, MAX_TEXT_READ_BYTES,
+        base64_encode, cleanup_expired_attachments, list, read, search, AttachmentKind,
+        FileAttachAbortRequest, FileAttachBeginRequest, FileAttachChunkRequest,
+        FileAttachFinishRequest, FileAttachmentUploads, FileListRequest, FileReadRequest,
+        FileSearchRequest, ATTACHMENT_RETENTION, MAX_ATTACHMENT_BYTES, MAX_ENTRIES,
+        MAX_SEARCH_RESULTS, MAX_TEXT_READ_BYTES,
     };
     use base64::{engine::general_purpose, Engine as _};
     use sha2::{Digest, Sha256};
@@ -956,7 +1071,11 @@ mod tests {
         let bytes = test_png(root.path());
         let mut uploads = FileAttachmentUploads::default();
         let upload_id = uploads
-            .begin_in_root(begin_request(&bytes), root.path().join("attachments"))
+            .begin_in_root(
+                begin_request(&bytes),
+                root.path().join("attachments"),
+                AttachmentKind::LegacyImage,
+            )
             .unwrap()
             .upload_id;
         let split = bytes.len() / 2;
@@ -1012,7 +1131,11 @@ mod tests {
         unsupported.file_name = "notes.txt".into();
         assert_eq!(
             uploads
-                .begin_in_root(unsupported, root.path().join("attachments"))
+                .begin_in_root(
+                    unsupported,
+                    root.path().join("attachments"),
+                    AttachmentKind::LegacyImage,
+                )
                 .unwrap_err(),
             "attachment_type_unsupported"
         );
@@ -1020,7 +1143,11 @@ mod tests {
         let mut mismatched = begin_request(&bytes);
         mismatched.sha256 = "0".repeat(64);
         let upload_id = uploads
-            .begin_in_root(mismatched, root.path().join("attachments"))
+            .begin_in_root(
+                mismatched,
+                root.path().join("attachments"),
+                AttachmentKind::LegacyImage,
+            )
             .unwrap()
             .upload_id;
         uploads
@@ -1046,6 +1173,7 @@ mod tests {
             .begin_in_root(
                 begin_request(invalid_image),
                 root.path().join("attachments"),
+                AttachmentKind::LegacyImage,
             )
             .unwrap()
             .upload_id;
@@ -1069,12 +1197,87 @@ mod tests {
     }
 
     #[test]
+    fn arbitrary_file_upload_preserves_name_without_image_validation() {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = b"not-an-image";
+        let mut request = begin_request(bytes);
+        request.file_name = "配置文件".into();
+        let mut uploads = FileAttachmentUploads::default();
+        let upload_id = uploads
+            .begin_in_root(
+                request,
+                root.path().join("attachments"),
+                AttachmentKind::AnyFile,
+            )
+            .unwrap()
+            .upload_id;
+        uploads
+            .append(FileAttachChunkRequest {
+                upload_id: upload_id.clone(),
+                offset: 0,
+                data_base64: general_purpose::STANDARD.encode(bytes),
+            })
+            .unwrap();
+        let result = uploads
+            .finish(FileAttachFinishRequest { upload_id })
+            .unwrap();
+        let path = std::path::PathBuf::from(result.path);
+        assert_eq!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some("配置文件")
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+
+        let file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))
+            .unwrap();
+        cleanup_expired_attachments(&root.path().join("attachments"), ATTACHMENT_RETENTION)
+            .unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn arbitrary_file_upload_accepts_20_mib_and_rejects_larger_declarations() {
+        let root = tempfile::tempdir().unwrap();
+        let bytes = b"x";
+        let mut request = begin_request(bytes);
+        request.file_name = "archive.bin".into();
+        request.size_bytes = MAX_ATTACHMENT_BYTES;
+        let mut uploads = FileAttachmentUploads::default();
+        let upload_id = uploads
+            .begin_in_root(
+                request.clone(),
+                root.path().join("attachments"),
+                AttachmentKind::AnyFile,
+            )
+            .unwrap()
+            .upload_id;
+        assert!(uploads.abort(FileAttachAbortRequest { upload_id }));
+
+        request.size_bytes += 1;
+        assert_eq!(
+            uploads
+                .begin_in_root(
+                    request,
+                    root.path().join("attachments"),
+                    AttachmentKind::AnyFile,
+                )
+                .unwrap_err(),
+            "attachment_too_large"
+        );
+    }
+
+    #[test]
     fn attachment_upload_enforces_offsets_and_abort_removes_partial_file() {
         let root = tempfile::tempdir().unwrap();
         let bytes = test_png(root.path());
         let mut uploads = FileAttachmentUploads::default();
         let upload_id = uploads
-            .begin_in_root(begin_request(&bytes), root.path().join("attachments"))
+            .begin_in_root(
+                begin_request(&bytes),
+                root.path().join("attachments"),
+                AttachmentKind::LegacyImage,
+            )
             .unwrap()
             .upload_id;
         assert_eq!(
@@ -1108,7 +1311,11 @@ mod tests {
         let mut uploads = FileAttachmentUploads::default();
         assert_eq!(
             uploads
-                .begin_in_root(begin_request(&bytes), attachments)
+                .begin_in_root(
+                    begin_request(&bytes),
+                    attachments,
+                    AttachmentKind::LegacyImage,
+                )
                 .unwrap_err(),
             "attachment_cache_invalid"
         );
