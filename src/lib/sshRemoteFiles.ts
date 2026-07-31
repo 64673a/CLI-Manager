@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Project, ProjectFileContentMatch, ProjectFileEntry, ProjectFilePreviewKind } from "./types";
-import { buildSshAgentHistoryContext, type SshAgentHistoryContext } from "./sshAgentHistory";
+import { buildSshAgentProjectLaunch, type SshAgentProjectLaunch } from "./sshAgentHistory";
 import { useBackgroundOperationStore } from "../stores/backgroundOperationStore";
 import type { TranslationKey } from "./i18n";
 
@@ -23,7 +23,7 @@ interface RemoteFileRead {
 
 export interface SshRemoteFileContext {
   consumerId: string;
-  launch: SshAgentHistoryContext["launch"];
+  launch: SshAgentProjectLaunch;
   rootPath: string;
 }
 
@@ -63,11 +63,11 @@ async function runFileOperation<T>(
 }
 
 export async function buildSshRemoteFileContext(project: Project): Promise<SshRemoteFileContext> {
-  const history = await buildSshAgentHistoryContext(project);
+  const launch = await buildSshAgentProjectLaunch(project);
   return {
-    consumerId: history.consumerId.replace(/^history:/, "files:"),
+    consumerId: `files:${launch.clientInstanceId}:${launch.hostId}:${project.id}`,
     launch: {
-      ...history.launch,
+      ...launch,
       bridgeEpoch: crypto.randomUUID(),
     },
     rootPath: project.remote_path.trim(),
