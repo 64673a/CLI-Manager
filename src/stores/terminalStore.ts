@@ -1077,7 +1077,7 @@ function getCurrentTerminalColors() {
     settings.darkThemePalette,
   );
   return {
-    foreground: normalizeHexColor(theme.foreground, "#d8dee9"),
+    foreground: normalizeHexColor(settings.terminalTextColor || theme.foreground, "#d8dee9"),
     background: normalizeHexColor(
       theme.background,
       settings.resolvedTheme === "dark" ? "#0c0e10" : "#ffffff",
