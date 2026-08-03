@@ -7478,9 +7478,9 @@
   transition: background-color 300ms ease;
 }
 
-/* Keep the xterm container above the pseudo-element layers. */
+/* Keep terminal content and controls above the pseudo-element layers without
+   overriding their own absolute/relative positioning. */
 .ui-terminal-bg-layer[data-bg-enabled="true"] > * {
-  position: relative;
   z-index: 2;
 }
 
