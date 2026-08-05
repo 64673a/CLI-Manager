@@ -19,6 +19,14 @@ const IME_PROCESS_KEY_RECOVERY_WINDOW_MS = 400;
 const IME_COMPOSITION_END_SUPPRESS_WINDOW_MS = 80;
 const NATIVE_TEXT_INPUT_DEDUP_WINDOW_MS = 16;
 const CJK_NATIVE_PUNCTUATION_PATTERN = /^[\u3000-\u303f\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]+$/u;
+// macOS 上经 IME 输入上下文提交的 ASCII 符号字符（需要 Shift 或本身就是符号的键）。
+// 这类字符在 WebKit 中可能以「insertText 先于 keydown(229)」的顺序到达，
+// 导致既有恢复逻辑（依赖 keydown(229)）无法触发。
+const ASCII_SYMBOL_PATTERN = /^[!-/:-@[-^`{-~"']$/u;
+// 中文输入法下经 IME 提交的全角标点/符号（U+2014-U+2027 破折号/省略号，
+// U+2018-U+201F 各类引号，如 “ ” ‘ ’ ——…）。它们不属于 ASCII，
+// 但同样以「insertText 先于 keydown(229)」到达，需要与 ASCII 符号一致地触发恢复。
+const FULLWIDTH_SYMBOL_PATTERN = /^[—-‧‘-‟]+$/u;
 
 interface TerminalCellSize {
   width: number;
@@ -234,6 +242,13 @@ export const attachTerminalIme = ({
     const isMac = osPlatformRef.current === "macos"
       || (osPlatformRef.current === "unknown" && navigator.platform.toLowerCase().includes("mac"));
     if (isMac && CJK_NATIVE_PUNCTUATION_PATTERN.test(event.data)) return true;
+    // macOS 上经 IME 输入上下文提交的 ASCII 符号（如 Shift+1 的 !、Shift+' 的 "）：
+    // WebKit 可能以「insertText 先于 keydown(229)」的顺序到达，此刻 lastImeProcessKeyAt
+    // 尚未设置，既有的 keydown(229) 依赖无法触发；直接对这些符号触发恢复，
+    // 避免 xterm 因 _keyDownSeen 抑制而丢失该字符（否则单击打不出符号）。
+    if (isMac && ASCII_SYMBOL_PATTERN.test(event.data)) return true;
+    // 中文全角标点（“ ” ‘ ’ —— …）同样经 IME 提交，与 ASCII 符号一致触发恢复。
+    if (isMac && FULLWIDTH_SYMBOL_PATTERN.test(event.data)) return true;
     return lastImeProcessKeyAt >= 0 && now - lastImeProcessKeyAt <= IME_PROCESS_KEY_RECOVERY_WINDOW_MS;
   };
   const scheduleNativeTextInputRecovery = (data: string) => {
